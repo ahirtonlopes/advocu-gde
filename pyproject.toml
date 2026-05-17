@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "advocu-gde"
+version = "1.0.0"
+description = "CLI to manage Advocu activities via Personal API — for any GDE"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+keywords = ["advocu", "gde", "google-developer-experts", "cli"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+]
+dependencies = [
+    "click>=8.1",
+    "requests>=2.31",
+    "rich>=13.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/ahirtonlopes/advocu-gde"
+Issues = "https://github.com/ahirtonlopes/advocu-gde/issues"
+
+[project.scripts]
+advocu = "advocu_manager.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["advocu_manager*"]
