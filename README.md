@@ -121,7 +121,9 @@ This is not a limitation of this tool — it reflects what the Advocu Personal A
 | `tags` | ✅ | ✅ | ✅ | ✅ |
 | `metrics` (attendees/readers) | ✅ | ✅ | ✅ | ✅ |
 | `country` | ✅ | ✅ | — | — |
-| `eventFormat` | ❌ | ✅ | — | — |
+| `eventFormat` | ❌ * | ✅ | — | — |
+
+\* `eventFormat` is rejected by the `/activity-drafts/public-speaking` endpoint. For workshops, accepted values are `In-Person`, `Virtual`, and `Hybrid`.
 
 ### What must be done manually in the web panel
 
@@ -432,7 +434,7 @@ These were discovered through live testing and are not officially documented by 
 - `city` is validated against Google Places and cannot be sent as free text
 - Image upload is not available via the Personal API for GDE accounts
 - `eventFormat` is accepted by `/activity-drafts/workshop` but rejected by `/activity-drafts/public-speaking`
-- PATCH requests require fields to be wrapped in `{"data": {...}}`
+- PATCH requests are handled automatically by the CLI — fields are wrapped in `{"data": {...}}` internally
 
 If you discover new API behaviour, please [open an issue](https://github.com/ahirtonlopes/advocu-gde/issues) or contribute to [CONTRIBUTING.md](CONTRIBUTING.md).
 

@@ -13,7 +13,8 @@ from rich.panel import Panel
 
 console = Console()
 
-# Reference list shown to the user — not enforced, free-form input is accepted
+# Tags validated by the Advocu API — only values from this list are accepted.
+# Using a tag outside this list will result in a 400 validation error.
 SUGGESTED_TAGS = [
     # AI / ML — confirmed active in Advocu API
     "AI",
@@ -24,6 +25,7 @@ SUGGESTED_TAGS = [
     "AI - Agent Development Kit (ADK)",
     "AI - TensorFlow",
     "Build with AI",
+    "Cloud - AI Tools",
     "Machine Learning",
     "Deep Learning",
     "Data Analysis",
