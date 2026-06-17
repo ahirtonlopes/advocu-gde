@@ -225,8 +225,11 @@ def stats(ctx, year):
     by_type: Counter = Counter()
     by_year: Counter = Counter()
     content_subtypes: Counter = Counter()
-    total_attendees = 0
+    total_talk_attendees = 0
+    total_workshop_attendees = 0
     total_readers = 0
+    total_stars = 0
+    total_forks = 0
 
     for a in activities:
         atype = a.get("type", "unknown")
@@ -238,49 +241,76 @@ def stats(ctx, year):
             by_year[act_date[:4]] += 1
 
         metrics = inner.get("metrics", {}) or {}
-        total_attendees += metrics.get("attendees", 0) or 0
-        total_readers += metrics.get("readers", 0) or 0
-
-        if atype == "content-creation":
+        if atype == "public-speaking":
+            total_talk_attendees += metrics.get("attendees", 0) or 0
+        elif atype == "workshop":
+            total_workshop_attendees += metrics.get("attendees", 0) or 0
+        elif atype == "content-creation":
+            total_readers += metrics.get("readers", 0) or 0
             subtype = inner.get("contentType", "Other")
             content_subtypes[subtype] += 1
+        elif atype == "github-repository":
+            total_stars += metrics.get("stars", 0) or 0
+            total_forks += metrics.get("forks", 0) or 0
 
-    label = str(year) if year else "All time"
+    title_label = str(year) if year else "All time"
+    max_bar = 30
 
     # ── Overview ───────────────────────────────────────────────────────────────
-    console.print(f"\n[bold cyan]── {label} overview ──────────────────────────────[/]")
+    console.print(f"\n[bold cyan]── {title_label} overview ─────────────────────────[/]")
     console.print(f"  [bold]{len(activities)}[/] total activities")
+    total_attendees = total_talk_attendees + total_workshop_attendees
     if total_attendees:
-        console.print(f"  [bold]{total_attendees:,}[/] total attendees (talks + workshops)")
+        console.print(f"  [bold]{total_attendees:,}[/] total attendees")
+        if total_talk_attendees:
+            console.print(f"    talks:     [bold]{total_talk_attendees:,}[/]")
+        if total_workshop_attendees:
+            console.print(f"    workshops: [bold]{total_workshop_attendees:,}[/]")
     if total_readers:
-        console.print(f"  [bold]{total_readers:,}[/] total views / readers (content)")
+        console.print(f"  [bold]{total_readers:,}[/] readers / views (content)")
+    if total_stars:
+        console.print(f"  [bold]{total_stars:,}[/] GitHub stars · [bold]{total_forks:,}[/] forks")
 
     # ── By type ────────────────────────────────────────────────────────────────
-    console.print(f"\n[bold cyan]── By type ──────────────────────────────────────[/]")
     type_labels = {
-        "public-speaking":  "Talks / Panels",
-        "workshop":         "Workshops",
-        "content-creation": "Content",
-        "stories":          "Stories",
-        "github-repository":"GitHub Repos",
+        "public-speaking":          "Talks / Panels",
+        "workshop":                 "Workshops",
+        "content-creation":         "Content",
+        "youtube-video":            "YouTube Videos",
+        "stories":                  "Stories",
+        "github-repository":        "GitHub Repos",
+        "interaction-with-googlers":"w/ Googlers",
+        "product-feedback-given":   "Product Feedback",
+        "mentoring":                "Mentoring",
     }
+    console.print(f"\n[bold cyan]── By type ──────────────────────────────────────[/]")
+    max_count = max(by_type.values()) if by_type else 1
     for atype, count in by_type.most_common():
         label_str = type_labels.get(atype, atype)
-        bar = "█" * count
-        console.print(f"  {label_str:<18} [bold]{count:>3}[/]  [dim]{bar}[/]")
+        bar = "█" * max(1, round(count / max_count * max_bar))
+        console.print(f"  {label_str:<24} [bold]{count:>3}[/]  [dim]{bar}[/]")
 
     if content_subtypes:
         console.print(f"\n[bold cyan]── Content breakdown ────────────────────────────[/]")
+        max_sub = max(content_subtypes.values())
         for subtype, count in content_subtypes.most_common():
-            bar = "█" * count
-            console.print(f"  {subtype:<18} [bold]{count:>3}[/]  [dim]{bar}[/]")
+            bar = "█" * max(1, round(count / max_sub * max_bar))
+            console.print(f"  {subtype:<24} [bold]{count:>3}[/]  [dim]{bar}[/]")
+
+    yt_count = by_type.get("youtube-video", 0)
+    if yt_count:
+        console.print(
+            f"\n  [dim]Note: YouTube views/likes/comments are tracked by Advocu directly "
+            f"from YouTube and are not available via the Personal API.[/]"
+        )
 
     # ── By year (only shown in all-time mode) ──────────────────────────────────
     if not year and len(by_year) > 1:
         console.print(f"\n[bold cyan]── By year ──────────────────────────────────────[/]")
+        max_yr = max(by_year.values())
         for yr in sorted(by_year):
             count = by_year[yr]
-            bar = "█" * min(count, 40)
+            bar = "█" * max(1, round(count / max_yr * max_bar))
             console.print(f"  {yr}  [bold]{count:>3}[/]  [dim]{bar}[/]")
 
     console.print()
