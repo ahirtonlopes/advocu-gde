@@ -15,47 +15,98 @@ console = Console()
 
 # Tags validated by the Advocu API — only values from this list are accepted.
 # Using a tag outside this list will result in a 400 validation error.
+# Last synced from the Advocu web UI tag autocomplete (June 2026).
 SUGGESTED_TAGS = [
-    # AI / ML — confirmed active in Advocu API
+    # AI / ML
     "AI",
+    "AI - Agent Development Kit (ADK)",
+    "AI - Agents",
+    "AI - AI Studio",
     "AI - Colab",
     "AI - Gemini",
+    "AI - Gemini CLI",
+    "AI - Gemma",
     "AI - Generative AI",
-    "AI - Agents",
-    "AI - Agent Development Kit (ADK)",
+    "AI - JAX",
+    "AI - Kaggle",
+    "AI - Keras",
+    "AI - LiteRT",
+    "AI - LLM",
+    "AI - MediaPipe",
+    "AI - ML Engineering (MLOps)",
+    "AI - Responsible AI",
     "AI - TensorFlow",
+    "AI - TPU",
+    "AI - Vertex AI",
+    "AI Math Clubs",
+    "AI Paper Reading Clubs",
     "Build with AI",
-    "Cloud - AI Tools",
-    "Machine Learning",
-    "Deep Learning",
-    "Data Analysis",
-    # ML Focus Areas
-    "ML Focus Area - Responsible ML/AI",
-    # ML Products
-    "ML Products - JAX/Flax",
-    "ML Products - Keras",
-    "ML Products - TensorFlow Core",
-    # GDE tracks
+    # Android
     "Android",
-    "Flutter",
-    "Firebase",
+    "Android - Adaptive",
+    "Android - Developer Productivity",
+    "Android - Differentiated",
+    "Android - Intelligent",
+    # Other GDE tracks
     "Angular",
-    "Web",
-    "Go",
-    "Kotlin",
-    "Cloud",
+    "AR/VR",
+    # Cloud
     "Google Cloud",
+    "Cloud - AI Tools",
+    "Cloud - API Gateways",
+    "Cloud - App Development",
+    "Cloud - Compute, Networking, Storage",
+    "Cloud - Data",
+    "Cloud - Operations & Management",
+    "Cloud - Security",
+    "Cloud - Serverless & Containers",
+    "Cloud Study Jam",
+    # Dart / Flutter
+    "Dart - Flutter",
+    # Firebase
+    "Firebase - App Hosting",
+    "Firebase - Authentication",
+    "Firebase - Cloud Messaging",
+    "Firebase - Data Connect",
+    "Firebase - Firestore",
+    "Firebase - Genkit",
+    "Firebase - Performance",
+    "Firebase - Realtime Database",
+    "Firebase - Remote Config",
+    "Firebase - Test Lab",
+    # Go
+    "Golang",
+    # Google
+    "Google I/O Extended",
     "Google Maps Platform",
-    "Payments",
-    # Other common GDE activity tags
-    "Python",
-    "Data Science",
-    "Security",
+    "Google Workspace",
+    # Identity
+    "Identity",
+    # ML community
+    "ML Study Jams",
+    # Misc
     "Open Source",
-    "DevOps",
-    "Accessibility",
-    "Community",
-    "Education",
+    # Payments
+    "Payments",
+    "Payments - Google Pay",
+    "Payments - Google Wallet",
+    # Other
+    "Road to Google Developers Certification",
+    "UX / UI Design",
+    # Web
+    "Web",
+    "Web - AI for Web Developers",
+    "Web - Browser Extensions",
+    "Web - CSS & UI",
+    "Web - DevTools & Browser Automation",
+    "Web - Fugu/PWA APIs",
+    "Web - Identity",
+    "Web - Performance",
+    # Workspace
+    "Workspace - Add Ons",
+    "Workspace - AppSheet",
+    "Workspace - Google Apps Script",
+    "Workspace - Google Workspace (REST) APIs",
 ]
 
 
