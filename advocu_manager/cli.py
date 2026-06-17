@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections import Counter, defaultdict
 from datetime import date
 
 import click
@@ -195,6 +196,94 @@ def submit_story(ctx):
     with console.status("Submitting…"):
         result = client.create_story_draft(payload["data"])
     _post_result(result)
+
+
+# ── stats ─────────────────────────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--year", "-y", default=None, type=int,
+              help="Filter by year (e.g. --year 2025). Omit for all-time.")
+@click.pass_context
+def stats(ctx, year):
+    """Show a summary of your activity contributions."""
+    client = get_client(ctx.obj["token"])
+    with console.status("Fetching activities…"):
+        activities = client.list_all_activities()
+
+    if year:
+        activities = [
+            a for a in activities
+            if (a.get("data", {}).get("activityDate") or "").startswith(str(year))
+        ]
+
+    if not activities:
+        label = str(year) if year else "all time"
+        console.print(f"[yellow]No activities found for {label}.[/]")
+        return
+
+    # ── Aggregate ──────────────────────────────────────────────────────────────
+    by_type: Counter = Counter()
+    by_year: Counter = Counter()
+    content_subtypes: Counter = Counter()
+    total_attendees = 0
+    total_readers = 0
+
+    for a in activities:
+        atype = a.get("type", "unknown")
+        inner = a.get("data", {})
+        by_type[atype] += 1
+
+        act_date = inner.get("activityDate", "")
+        if act_date:
+            by_year[act_date[:4]] += 1
+
+        metrics = inner.get("metrics", {}) or {}
+        total_attendees += metrics.get("attendees", 0) or 0
+        total_readers += metrics.get("readers", 0) or 0
+
+        if atype == "content-creation":
+            subtype = inner.get("contentType", "Other")
+            content_subtypes[subtype] += 1
+
+    label = str(year) if year else "All time"
+
+    # ── Overview ───────────────────────────────────────────────────────────────
+    console.print(f"\n[bold cyan]── {label} overview ──────────────────────────────[/]")
+    console.print(f"  [bold]{len(activities)}[/] total activities")
+    if total_attendees:
+        console.print(f"  [bold]{total_attendees:,}[/] total attendees (talks + workshops)")
+    if total_readers:
+        console.print(f"  [bold]{total_readers:,}[/] total views / readers (content)")
+
+    # ── By type ────────────────────────────────────────────────────────────────
+    console.print(f"\n[bold cyan]── By type ──────────────────────────────────────[/]")
+    type_labels = {
+        "public-speaking":  "Talks / Panels",
+        "workshop":         "Workshops",
+        "content-creation": "Content",
+        "stories":          "Stories",
+        "github-repository":"GitHub Repos",
+    }
+    for atype, count in by_type.most_common():
+        label_str = type_labels.get(atype, atype)
+        bar = "█" * count
+        console.print(f"  {label_str:<18} [bold]{count:>3}[/]  [dim]{bar}[/]")
+
+    if content_subtypes:
+        console.print(f"\n[bold cyan]── Content breakdown ────────────────────────────[/]")
+        for subtype, count in content_subtypes.most_common():
+            bar = "█" * count
+            console.print(f"  {subtype:<18} [bold]{count:>3}[/]  [dim]{bar}[/]")
+
+    # ── By year (only shown in all-time mode) ──────────────────────────────────
+    if not year and len(by_year) > 1:
+        console.print(f"\n[bold cyan]── By year ──────────────────────────────────────[/]")
+        for yr in sorted(by_year):
+            count = by_year[yr]
+            bar = "█" * min(count, 40)
+            console.print(f"  {yr}  [bold]{count:>3}[/]  [dim]{bar}[/]")
+
+    console.print()
 
 
 # ── fix-date ──────────────────────────────────────────────────────────────────
