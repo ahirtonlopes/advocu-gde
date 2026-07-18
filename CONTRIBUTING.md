@@ -7,15 +7,21 @@ Every GDE is welcome to contribute.
 ## How to contribute
 
 1. **Fork** the repository and create a branch from `main`
-2. **Install** in development mode:
+2. **Install** in development mode, with test dependencies:
    ```bash
    python -m venv .venv
    source .venv/bin/activate
-   pip install -e .
+   pip install -e ".[dev]"
    ```
 3. **Make your changes** — keep them focused and well-described
-4. **Test manually** with your own `ADVOCU_TOKEN` before submitting
-5. Open a **Pull Request** with a clear description of what changed and why
+4. **Run the test suite**:
+   ```bash
+   pytest -v
+   ```
+   Add tests for any new behaviour, especially API quirks discovered through
+   live testing (see [Code style](#code-style) below).
+5. **Test manually** with your own `ADVOCU_TOKEN` before submitting
+6. Open a **Pull Request** with a clear description of what changed and why — CI runs the test suite automatically on every PR
 
 ## What we welcome
 
@@ -32,9 +38,13 @@ These were discovered through live testing and are not officially documented:
 | Endpoint | Rejected fields |
 |---|---|
 | `POST /activity-drafts/public-speaking` | `city`, `submissionDate`, `eventFormat` |
-| `POST /activity-drafts/workshop` | `city`, `submissionDate` |
+| `POST /activity-drafts/workshop` | `city`, `submissionDate`, `durationHours` |
 | `POST /activity-drafts/*` (all) | `submissionDate` (set automatically) |
 | `PATCH /activities/{id}` | Expects `{"data": {...}}` wrapper |
+
+Other limits:
+- `description` (rendered HTML) is capped at **2000 characters** — the CLI
+  warns before submitting if you're over
 
 Fields that must be completed via the Advocu web panel:
 - **City** — requires geocoded autocomplete

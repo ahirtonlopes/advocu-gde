@@ -1,5 +1,7 @@
 # advocu-gde
 
+[![CI](https://github.com/ahirtonlopes/advocu-gde/actions/workflows/ci.yml/badge.svg)](https://github.com/ahirtonlopes/advocu-gde/actions/workflows/ci.yml)
+
 > A CLI tool for Google Developer Experts to manage [Advocu](https://advocu.com) activities via the Personal API.
 
 If you're a GDE, you know the drill: after every talk, workshop, article, or community event, you need to log your activity on Advocu. This tool lets you do that directly from your terminal — no more clicking through forms for every submission.
@@ -410,6 +412,8 @@ advocu-gde/
 │   ├── api.py            # HTTP client with rate limiting (30 req/min)
 │   ├── cli.py            # Click CLI commands
 │   └── templates.py      # Interactive forms + Markdown→HTML converter
+├── tests/                # pytest suite (parser, HTTP client, payload builders)
+├── .github/workflows/    # CI — runs the test suite on every push/PR
 ├── pyproject.toml
 ├── requirements.txt
 ├── LICENSE               # MIT
