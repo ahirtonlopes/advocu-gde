@@ -1,10 +1,50 @@
 # advocu-gde
 
 [![CI](https://github.com/ahirtonlopes/advocu-gde/actions/workflows/ci.yml/badge.svg)](https://github.com/ahirtonlopes/advocu-gde/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 
 > A CLI tool for Google Developer Experts to manage [Advocu](https://advocu.com) activities via the Personal API.
 
 If you're a GDE, you know the drill: after every talk, workshop, article, or community event, you need to log your activity on Advocu. This tool lets you do that directly from your terminal — no more clicking through forms for every submission.
+
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/ahirtonlopes/advocu-gde.git && cd advocu-gde
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+
+# Get your token: advocu.com → Profile → Settings → Personal API
+export ADVOCU_TOKEN=your_personal_api_token_here
+
+advocu submit talk
+```
+
+That's it — see [How submissions work](#how-submissions-work-important--read-this-first) for what happens next, or the sections below for everything else this tool can do.
+
+---
+
+## Contents
+
+- [What this tool does](#what-this-tool-does)
+- [Who is this for?](#who-is-this-for)
+- [Getting your API token](#getting-your-api-token)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [How submissions work](#how-submissions-work-important--read-this-first)
+- [Commands](#commands)
+- [Markdown reference for descriptions](#markdown-reference-for-descriptions)
+- [Batch submissions via script](#batch-submissions-via-script)
+- [Identify your activity IDs](#identify-your-activity-ids)
+- [Project structure](#project-structure)
+- [Rate limiting](#rate-limiting)
+- [Known API limitations](#known-api-limitations)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
