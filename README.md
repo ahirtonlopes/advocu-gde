@@ -219,7 +219,7 @@ After sending, you'll see the draft ID and the steps to complete it in the web p
 
 ### `advocu submit workshop` — Submit a workshop draft
 
-Same flow as a talk, with two extra fields: event format and duration in hours.
+Same flow as a talk, with one extra field: event format.
 
 ```bash
 advocu submit workshop
@@ -434,6 +434,8 @@ These were discovered through live testing and are not officially documented by 
 - `city` is validated against Google Places and cannot be sent as free text
 - Image upload is not available via the Personal API for GDE accounts
 - `eventFormat` is accepted by `/activity-drafts/workshop` but rejected by `/activity-drafts/public-speaking`
+- `durationHours` is rejected as an extraneous key by `/activity-drafts/workshop` — not exposed by the API despite being a natural fit for workshops
+- `description` (rendered HTML, tags included) is capped at 2000 characters — POSTs over that return HTTP 400 with `expected maxLength: 2000`. The CLI warns before submitting if you're over.
 - PATCH requests are handled automatically by the CLI — fields are wrapped in `{"data": {...}}` internally
 
 If you discover new API behaviour, please [open an issue](https://github.com/ahirtonlopes/advocu-gde/issues) or contribute to [CONTRIBUTING.md](CONTRIBUTING.md).

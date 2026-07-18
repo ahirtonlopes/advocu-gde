@@ -143,15 +143,25 @@ def _md_to_html(text: str) -> str:
 def _inline(text: str) -> str:
     # Escape & before inserting any HTML markup
     text = re.sub(r'&(?!(amp|lt|gt|quot|#\d+);)', '&amp;', text)
-    # [text](url) → <a>
-    text = re.sub(
-        r'\[([^\]]+)\]\((https?://[^\)]+)\)',
-        r'<a href="\2" rel="nofollow">\1</a>',
-        text,
-    )
+
+    # [text](url) → stash as a placeholder *before* bold/italic run, so a "_"
+    # inside the URL (common in GitHub/Colab paths) can't be mistaken for an
+    # italic delimiter and corrupt the href. Restored after bold/italic.
+    links: list[str] = []
+
+    def _stash_link(m: "re.Match[str]") -> str:
+        links.append(f'<a href="{m.group(2)}" rel="nofollow">{m.group(1)}</a>')
+        return f"\x00LINK{len(links) - 1}\x00"
+
+    text = re.sub(r'\[([^\]]+)\]\((https?://[^\)]+)\)', _stash_link, text)
+
     # **bold** and _italic_
     text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
     text = re.sub(r'_(.+?)_', r'<em>\1</em>', text)
+
+    for i, link_html in enumerate(links):
+        text = text.replace(f"\x00LINK{i}\x00", link_html)
+
     return text
 
 
@@ -238,6 +248,11 @@ def _ask_resources() -> list[tuple[str, str]]:
     return resources
 
 
+# Advocu rejects drafts with HTTP 400 ("expected maxLength: 2000") once the
+# rendered description HTML (tags included) crosses this length.
+DESCRIPTION_MAX_LENGTH = 2000
+
+
 def _confirm_payload(data: dict) -> bool:
     lines = []
     for k, v in data.items():
@@ -250,6 +265,15 @@ def _confirm_payload(data: dict) -> bool:
             val = str(v)
             lines.append(f"  [cyan]{k}:[/] {val[:120]}{'…' if len(val) > 120 else ''}")
     console.print(Panel("\n".join(lines), title="Payload preview", border_style="blue"))
+
+    description = data.get("description", "")
+    if len(description) > DESCRIPTION_MAX_LENGTH:
+        console.print(
+            f"[bold yellow]Warning:[/] description is {len(description)} characters "
+            f"(rendered HTML) — Advocu rejects drafts over {DESCRIPTION_MAX_LENGTH} with HTTP 400. "
+            "Shorten the text before submitting."
+        )
+
     return click.confirm("Submit draft?", default=True)
 
 
@@ -307,7 +331,6 @@ def build_workshop() -> dict | None:
     activity_date  = _ask_date("Activity date (YYYY-MM-DD)")
     event_url      = _ask_url("Event URL")
     attendees      = click.prompt("Number of attendees", default=0, type=int)
-    duration       = click.prompt("Duration in hours (0 = skip)", default=0, type=int)
     language       = click.prompt(
         "Language", default="EN-US",
         type=click.Choice(["EN-US", "PT-BR", "ES", "FR", "DE", "JA", "KO", "ZH"], case_sensitive=False),
@@ -330,8 +353,6 @@ def build_workshop() -> dict | None:
     }
     if not country:
         data.pop("country")
-    if duration:
-        data["durationHours"] = duration
 
     return {"data": data} if _confirm_payload(data) else None
 
