@@ -15,43 +15,35 @@ console = Console()
 
 # Tags validated by the Advocu API — only values from this list are accepted.
 # Using a tag outside this list will result in a 400 validation error.
-# Last synced from the Advocu web UI tag autocomplete (June 2026).
+# Last synced from the Advocu web UI tag dropdown (September 2026); every value was
+# also checked against the API. Advocu retires and adds tags without notice, so
+# re-sync when a draft is rejected with "is not a valid enum value".
 SUGGESTED_TAGS = [
-    # AI / ML
+    # AI
     "AI",
     "AI - Agent Development Kit (ADK)",
-    "AI - Agents",
     "AI - AI Studio",
+    "AI - Antigravity",
     "AI - Colab",
     "AI - Gemini",
-    "AI - Gemini CLI",
+    "AI - Gemini Enterprise Agent Platform",
     "AI - Gemma",
-    "AI - Generative AI",
+    "AI - Genkit",
     "AI - JAX",
     "AI - Kaggle",
     "AI - Keras",
     "AI - LiteRT",
-    "AI - LLM",
     "AI - MediaPipe",
-    "AI - ML Engineering (MLOps)",
-    "AI - Responsible AI",
-    "AI - TensorFlow",
+    "AI - TorchTPU",
     "AI - TPU",
-    "AI - Vertex AI",
-    "AI Math Clubs",
-    "AI Paper Reading Clubs",
-    "Build with AI",
+    "AI - vLLM",
     # Android
     "Android",
     "Android - Adaptive",
     "Android - Developer Productivity",
     "Android - Differentiated",
     "Android - Intelligent",
-    # Other GDE tracks
-    "Angular",
-    "AR/VR",
     # Cloud
-    "Google Cloud",
     "Cloud - AI Tools",
     "Cloud - API Gateways",
     "Cloud - App Development",
@@ -61,39 +53,30 @@ SUGGESTED_TAGS = [
     "Cloud - Security",
     "Cloud - Serverless & Containers",
     "Cloud Study Jam",
-    # Dart / Flutter
-    "Dart - Flutter",
     # Firebase
+    "Firebase",
+    "Firebase - AI Logic",
+    "Firebase - AI Monitoring",
+    "Firebase - App Check",
+    "Firebase - App Distribution",
     "Firebase - App Hosting",
     "Firebase - Authentication",
     "Firebase - Cloud Messaging",
-    "Firebase - Data Connect",
+    "Firebase - Crashlytics",
     "Firebase - Firestore",
-    "Firebase - Genkit",
+    "Firebase - Functions",
     "Firebase - Performance",
     "Firebase - Realtime Database",
     "Firebase - Remote Config",
-    "Firebase - Test Lab",
-    # Go
-    "Golang",
-    # Google
-    "Google I/O Extended",
-    "Google Maps Platform",
-    "Google Workspace",
-    # Identity
+    "Firebase - SQL Connect",
+    # Identity / Payments
     "Identity",
-    # ML community
-    "ML Study Jams",
-    # Misc
-    "Open Source",
-    # Payments
+    "Identity - Google OAuth",
+    "Identity - Sign in with Google",
     "Payments",
     "Payments - Google Pay",
     "Payments - Google Wallet",
-    # Other
-    "Road to Google Developers Certification",
-    "UX / UI Design",
-    # Web
+    # Web / Workspace
     "Web",
     "Web - AI for Web Developers",
     "Web - Browser Extensions",
@@ -102,11 +85,28 @@ SUGGESTED_TAGS = [
     "Web - Fugu/PWA APIs",
     "Web - Identity",
     "Web - Performance",
-    # Workspace
     "Workspace - Add Ons",
     "Workspace - AppSheet",
     "Workspace - Google Apps Script",
     "Workspace - Google Workspace (REST) APIs",
+    # Other
+    "Angular",
+    "AR/VR",
+    "Build with AI",
+    "Dart - Flutter",
+    "DevFest",
+    "Diversity & Inclusion",
+    "Earth Engine",
+    "Golang",
+    "Google Cloud",
+    "Google I/O Extended",
+    "Google Maps Platform",
+    "Google Workspace",
+    "International Women's Day",
+    "ML Study Jams",
+    "Open Source",
+    "Road to Google Developers Certification",
+    "UX / UI Design",
 ]
 
 
