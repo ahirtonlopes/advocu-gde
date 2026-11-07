@@ -1,0 +1,38 @@
+# Preview without sending (no token needed):
+#   advocu submit talk --file examples/talk.toml --dry-run
+# Send it:
+#   advocu submit talk --file examples/talk.toml          (asks to confirm)
+#   advocu submit talk --file examples/talk.toml --yes    (no prompt, for scripts)
+
+role = "Speaker"                  # optional, default "Speaker"
+title = "Building Agents with Google ADK"
+event = "DevFest Example City 2026"
+date = 2026-10-31                 # a TOML date or the string "2026-10-31"
+url = "https://gdg.community.dev/events/details/example-devfest/"
+attendees = 120                   # optional, default 0
+language = "PT-BR"                # the language the talk was delivered in
+country = "Brazil"                # optional; the city is set later in the web panel
+tags = ["AI", "AI - Agent Development Kit (ADK)", "AI - Gemini"]
+
+# Markdown: **bold**, _italic_, [label](url), and "* item" lists.
+# The rendered HTML (tags included) must stay under 2000 characters.
+description = """
+On October 31, 2026, I delivered the session "Building Agents with Google ADK" at DevFest Example City 2026.
+
+The talk covered:
+
+* Custom tools that call live APIs, such as exit_loop-style stop conditions;
+* Memory with sessions, and why it separates an agent that remembers from one that does not;
+* A live demo, with the notebook on [Colab](https://colab.research.google.com/github/example/demo/blob/main/demo_notebook.ipynb).
+
+Key takeaway: a policy in the prompt is a suggestion, not a control.
+"""
+
+# Optional; appended to the description as a "Resources" list.
+[[resources]]
+name = "Slides"
+url = "https://example.com/slides.pdf"
+
+[[resources]]
+name = "GitHub repository"
+url = "https://github.com/example/demo"

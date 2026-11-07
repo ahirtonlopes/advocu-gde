@@ -1,0 +1,13 @@
+{
+  "content_type": "Videos",
+  "title": "Introduction to the Gemini API",
+  "date": "2026-05-10",
+  "url": "https://www.youtube.com/watch?v=example",
+  "language": "EN-US",
+  "readers": 3500,
+  "tags": ["AI", "AI - Gemini"],
+  "description": "A short walkthrough of the Gemini API.\n\n* Getting an API key;\n* Your first request;\n* Function calling.",
+  "resources": [
+    {"name": "Sample code", "url": "https://github.com/example/gemini-intro"}
+  ]
+}

@@ -1,0 +1,26 @@
+#   advocu submit workshop --file examples/workshop.toml --dry-run
+
+role = "Workshop Proctor"         # optional, default "Workshop Proctor"
+title = "Hands-on Agents with Google ADK"
+event = "Build with AI Example City"
+date = 2026-07-12
+url = "https://gdg.community.dev/events/details/example-build-with-ai/"
+attendees = 40
+language = "PT-BR"
+country = "Brazil"
+event_format = "In-Person"        # In-Person (default), Virtual or Hybrid
+tags = ["AI", "AI - Agent Development Kit (ADK)", "AI - Colab"]
+
+description = """
+Delivered a hands-on workshop on building agents with the Agent Development Kit.
+
+Participants built, step by step:
+
+* A first agent with a custom tool;
+* Conversational memory with sessions;
+* A multi-agent workflow with a planner, a critic and a refiner.
+"""
+
+[[resources]]
+name = "Workshop repository"
+url = "https://github.com/example/workshop"

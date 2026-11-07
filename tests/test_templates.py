@@ -137,3 +137,21 @@ class TestFormatTitle:
 def test_description_max_length_constant():
     # Advocu returns HTTP 400 ("expected maxLength: 2000") past this size.
     assert DESCRIPTION_MAX_LENGTH == 2000
+
+
+class TestResourcesEscaping:
+    def test_ampersand_in_label_and_url(self):
+        html = _build_resources_html([("Tools & Memory", "https://x.com/a?b=1&c=2")])
+
+        assert ">Tools &amp; Memory</a>" in html
+        assert 'href="https://x.com/a?b=1&amp;c=2"' in html
+
+
+class TestAskDate:
+    def test_reprompts_until_the_date_is_valid(self, monkeypatch):
+        import advocu_manager.templates as templates
+
+        answers = iter(["31/10/2026", "2026-02-30", " 2026-10-31 "])
+        monkeypatch.setattr(templates.click, "prompt", lambda *a, **k: next(answers))
+
+        assert templates._ask_date("Date") == "2026-10-31"

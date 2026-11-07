@@ -38,10 +38,12 @@ That's it — see [How submissions work](#how-submissions-work-important--read-t
 - [How submissions work](#how-submissions-work-important--read-this-first)
 - [Commands](#commands)
 - [Markdown reference for descriptions](#markdown-reference-for-descriptions)
+- [Submit from a file](#submit-from-a-file-non-interactive)
 - [Batch submissions via script](#batch-submissions-via-script)
 - [Identify your activity IDs](#identify-your-activity-ids)
 - [Project structure](#project-structure)
 - [Rate limiting](#rate-limiting)
+- [Errors and timeouts](#errors-and-timeouts)
 - [Known API limitations](#known-api-limitations)
 - [Contributing](#contributing)
 - [License](#license)
@@ -178,6 +180,8 @@ This is not a limitation of this tool — it reflects what the Advocu Personal A
 ---
 
 ## Commands
+
+`advocu --version` prints the installed version. Every `advocu submit ...` command can also read the draft from a file instead of asking questions: see [Submit from a file](#submit-from-a-file-non-interactive).
 
 ### `advocu list` — List all your activities
 
@@ -349,6 +353,8 @@ When filling in the description field, you can use:
 | `* item` or `→ item` | Bullet list item |
 | Blank line | New paragraph |
 
+Underscores inside words are left as typed, so identifiers such as `exit_loop` or `before_tool_callback` are safe to write in a technical description. `_italic_` only works around whole words.
+
 **Example input:**
 
 ```
@@ -380,50 +386,119 @@ The room was packed with 200+ developers asking great questions.
 
 ---
 
+## Submit from a file (non-interactive)
+
+Write the draft once in a `.toml` or `.json` file and send it with one command, no prompts. It suits writing the text in your own editor, keeping drafts in git, or sending several at once. Ready-to-copy templates for each type live in [`examples/`](examples/).
+
+```bash
+advocu submit talk --file examples/talk.toml --dry-run   # validate and preview, send nothing
+advocu submit talk --file examples/talk.toml             # preview, then ask to confirm
+advocu submit talk --file examples/talk.toml --yes       # send without asking (for scripts)
+```
+
+`--dry-run` needs no token and no network, so it is safe to run anywhere, CI included. Without `--yes` you are asked to confirm, because a draft cannot be deleted through the API.
+
+A talk, in TOML:
+
+```toml
+title = "Building Agents with Google ADK"
+event = "DevFest Example City 2026"
+date = 2026-10-31
+url = "https://gdg.community.dev/events/details/example-devfest/"
+attendees = 120
+language = "PT-BR"
+country = "Brazil"
+tags = ["AI", "AI - Agent Development Kit (ADK)", "AI - Gemini"]
+description = """
+On October 31, 2026, I delivered the session at DevFest Example City 2026.
+
+* Custom tools, with exit_loop-style stop conditions;
+* A live demo on [Colab](https://colab.research.google.com/github/example/demo).
+"""
+
+[[resources]]
+name = "Slides"
+url = "https://example.com/slides.pdf"
+```
+
+| Key | talk | workshop | content | story | Notes |
+|---|---|---|---|---|---|
+| `title` | required | required | required | required | Final title: `Role @ Event - Title (LANG)` for talks and workshops, `Title (LANG)` for content |
+| `event` | required | required | - | - | Event name |
+| `date` | required | required | required | required | `YYYY-MM-DD`, quoted or as a native TOML date |
+| `url` | required | required | required | optional | `http://` or `https://` |
+| `tags` | required | required | required | required | List of text; see the tag list in `templates.py` |
+| `description` | optional | optional | optional | optional | Markdown, see [the reference](#markdown-reference-for-descriptions) |
+| `resources` | optional | optional | optional | - | List of `{name, url}`, appended as a "Resources" list |
+| `role` | `Speaker` | `Workshop Proctor` | - | - | Defaults shown |
+| `attendees` | `0` | `0` | - | - | Whole number |
+| `readers` | - | - | `0` | - | Views or readers |
+| `language` | `EN-US` | `EN-US` | `EN-US` | - | EN-US, PT-BR, ES, FR, DE, JA, KO, ZH. The language the material is delivered in |
+| `country` | optional | optional | - | - | The city is set later in the web panel |
+| `event_format` | - | `In-Person` | - | - | In-Person, Virtual or Hybrid |
+| `content_type` | - | - | `Articles` | - | Articles, Videos, Podcasts or Other |
+
+What the CLI checks before sending anything:
+
+- **Every problem is listed at once**, so you fix the file in a single pass. A misspelled key (`atendees`) is reported with the list of allowed keys instead of being ignored.
+- **A description over 2000 characters blocks the submission** (see [Known API limitations](#known-api-limitations)); with `--dry-run` it fails too, which makes it usable as a check in CI.
+- **A tag that is not in the built-in list only warns.** Advocu changes its tags without notice, so the CLI does not refuse them; the API has the last word.
+
+Exit codes: `0` sent, or a dry run that passed; `1` invalid draft, or an error from the API or the network; `2` wrong command-line usage (for example a file that does not exist).
+
+---
+
 ## Batch submissions via script
 
-If you have multiple activities to submit at once, you can use the Python API directly:
+Put one file per activity in a folder and loop over them:
+
+```bash
+for f in drafts/talk-*.toml; do
+  advocu submit talk --file "$f" --yes
+done
+```
+
+The client waits 2 seconds between calls (the API allows 30 requests per minute), so a long list just takes a little longer.
+
+From Python, build the payload with the same function the CLI uses, so validation and the Markdown conversion stay identical:
 
 ```python
 from advocu_manager.api import AdvocuClient
-from advocu_manager.templates import _md_to_html, _build_resources_html
+from advocu_manager.templates import SpecError, payload_from_spec
 
-client = AdvocuClient()  # reads ADVOCU_TOKEN from environment
+client = AdvocuClient()  # reads ADVOCU_TOKEN from the environment
 
 talks = [
     {
-        "title": "Speaker @ DevFest Berlin - Intro to ADK (EN-US)",
-        "activityDate": "2024-11-10",
-        "activityUrl": "https://devfest.berlin",
-        "description": _md_to_html(
-            "Talk about the Agent Development Kit at DevFest Berlin.\n\n"
-            "* ADK architecture\n"
-            "* [Live demo](https://github.com/my/demo)\n"
-            "* Q&A highlights"
-        ) + _build_resources_html([
-            ("Slides", "https://speakerdeck.com/..."),
-            ("GitHub", "https://github.com/..."),
-        ]),
-        "tags": ["AI", "AI - Agents"],
-        "metrics": {"attendees": 300},
+        "title": "Intro to ADK",
+        "event": "DevFest Berlin",
+        "date": "2024-11-10",
+        "url": "https://devfest.berlin",
+        "attendees": 300,
         "country": "Germany",
-        "private": False,
+        "tags": ["AI", "AI - Agent Development Kit (ADK)"],
+        "description": "Talk about the Agent Development Kit.\n\n* ADK architecture\n* [Live demo](https://github.com/my/demo)",
+        "resources": [{"name": "Slides", "url": "https://speakerdeck.com/example"}],
     },
     {
-        "title": "Speaker @ GDG London - Gemini in Production (EN-US)",
-        "activityDate": "2024-11-22",
-        "activityUrl": "https://gdg.community.dev/gdg-london",
-        "description": _md_to_html("Session on deploying Gemini-powered apps."),
-        "tags": ["AI", "AI - Gemini"],
-        "metrics": {"attendees": 120},
+        "title": "Gemini in Production",
+        "event": "GDG London",
+        "date": "2024-11-22",
+        "url": "https://gdg.community.dev/gdg-london",
+        "attendees": 120,
         "country": "United Kingdom",
-        "private": False,
+        "tags": ["AI", "AI - Gemini"],
+        "description": "Session on deploying Gemini-powered apps.",
     },
 ]
 
-for talk in talks:
-    result = client.create_talk_draft(talk)
-    print(f"Draft created: {result.get('id')} — {talk['title'][:60]}")
+for spec in talks:
+    try:
+        result = client.create_talk_draft(payload_from_spec("talk", spec))
+    except SpecError as e:
+        print("Skipped:", "; ".join(e.errors))
+        continue
+    print(f"Draft created: {result.get('id')} - {spec['title']}")
 ```
 
 ---
@@ -448,11 +523,12 @@ for a in json.load(sys.stdin):
 ```
 advocu-gde/
 ├── advocu_manager/
-│   ├── __init__.py       # Package version
-│   ├── api.py            # HTTP client with rate limiting (30 req/min)
+│   ├── __init__.py       # Package version (single source of truth)
+│   ├── api.py            # HTTP client: rate limiting, timeouts, error messages
 │   ├── cli.py            # Click CLI commands
-│   └── templates.py      # Interactive forms + Markdown→HTML converter
-├── tests/                # pytest suite (parser, HTTP client, payload builders)
+│   └── templates.py      # Draft specs, validation, prompts, Markdown→HTML converter
+├── examples/             # Ready-to-copy draft files for `submit --file` (tested)
+├── tests/                # pytest suite (parser, client, drafts, CLI)
 ├── .github/workflows/    # CI — runs the test suite on every push/PR
 ├── pyproject.toml
 ├── requirements.txt
@@ -470,6 +546,20 @@ The Advocu API allows **30 requests per minute**. The client automatically throt
 
 ---
 
+## Errors and timeouts
+
+Requests time out after 5 seconds to connect and 30 seconds to read, so a dead connection ends with a message instead of hanging the terminal. Failures are reported on one line, with exit code `1`, rather than as a traceback:
+
+```
+Error: HTTP 401: check that your token is valid: set ADVOCU_TOKEN or pass --token
+Error: Could not connect to Advocu (api.advocu.com). Check your internet connection and try again.
+Error: HTTP 400: Activity draft did not pass validation. [#: extraneous key [durationHours] is not permitted]
+```
+
+For a rejected draft, the part in brackets is what Advocu says is wrong, which is usually enough to fix the file.
+
+---
+
 ## Known API limitations
 
 These were discovered through live testing and are not officially documented by Advocu:
@@ -479,7 +569,7 @@ These were discovered through live testing and are not officially documented by 
 - Image upload is not available via the Personal API for GDE accounts
 - `eventFormat` is accepted by `/activity-drafts/workshop` but rejected by `/activity-drafts/public-speaking`
 - `durationHours` is rejected as an extraneous key by `/activity-drafts/workshop` — not exposed by the API despite being a natural fit for workshops
-- `description` (rendered HTML, tags included) is capped at 2000 characters — POSTs over that return HTTP 400 with `expected maxLength: 2000`. The CLI warns before submitting if you're over.
+- `description` (rendered HTML, tags included) is capped at 2000 characters: POSTs over that return HTTP 400 with `expected maxLength: 2000`. The interactive flow warns before submitting if you are over, and `submit --file` refuses to send.
 - PATCH requests are handled automatically by the CLI — fields are wrapped in `{"data": {...}}` internally
 
 If you discover new API behaviour, please [open an issue](https://github.com/ahirtonlopes/advocu-gde/issues) or contribute to [CONTRIBUTING.md](CONTRIBUTING.md).

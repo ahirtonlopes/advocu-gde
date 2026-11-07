@@ -1,0 +1,9 @@
+#   advocu submit story --file examples/story.toml --dry-run
+
+title = "Mentoring session at the local GDG"
+date = 2026-09-12
+url = "https://www.linkedin.com/feed/update/urn:li:activity:example/"   # optional
+tags = ["AI"]
+description = """
+Spent the afternoon with the community answering questions about getting started with agents.
+"""

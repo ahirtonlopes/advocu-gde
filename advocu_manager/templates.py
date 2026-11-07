@@ -1,14 +1,19 @@
-"""Interactive prompts that build draft payloads for each activity type."""
+"""Draft payloads for each activity type: interactive prompts and file specs."""
 
 from __future__ import annotations
 
+import html
+import json
 import re
 import sys
-from datetime import date
+import tomllib
+from datetime import date, datetime
+from pathlib import Path
 from urllib.parse import urlparse
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 
 console = Console()
@@ -175,7 +180,8 @@ def _build_resources_html(resources: list[tuple[str, str]]) -> str:
     if not resources:
         return ""
     items = "\n".join(
-        f' <li><a href="{url}" rel="nofollow">{label}</a></li>'
+        f' <li><a href="{html.escape(url, quote=True)}" rel="nofollow">'
+        f"{html.escape(label, quote=False)}</a></li>"
         for label, url in resources
     )
     return f"\n<p></p>\n<p><strong>Resources:</strong></p>\n<ul>\n{items}\n</ul>"
@@ -189,12 +195,10 @@ def _ask(prompt: str, default: str = "") -> str:
 
 def _ask_date(prompt: str) -> str:
     while True:
-        value = click.prompt(prompt)
-        try:
-            date.fromisoformat(value)
+        value = _parse_date(click.prompt(prompt))
+        if value:
             return value
-        except ValueError:
-            console.print("[red]Invalid date — use YYYY-MM-DD format[/]")
+        console.print("[red]Invalid date - use YYYY-MM-DD format[/]")
 
 
 def _ask_url(prompt: str, required: bool = True) -> str:
@@ -258,162 +262,376 @@ def _ask_resources() -> list[tuple[str, str]]:
 # rendered description HTML (tags included) crosses this length.
 DESCRIPTION_MAX_LENGTH = 2000
 
-
-def _confirm_payload(data: dict) -> bool:
-    lines = []
-    for k, v in data.items():
-        if isinstance(v, list):
-            lines.append(f"  [cyan]{k}:[/] {', '.join(str(i) for i in v)}")
-        elif isinstance(v, dict):
-            for sk, sv in v.items():
-                lines.append(f"  [cyan]{k}.{sk}:[/] {str(sv)[:100]}")
-        else:
-            val = str(v)
-            lines.append(f"  [cyan]{k}:[/] {val[:120]}{'…' if len(val) > 120 else ''}")
-    console.print(Panel("\n".join(lines), title="Payload preview", border_style="blue"))
-
-    description = data.get("description", "")
-    if len(description) > DESCRIPTION_MAX_LENGTH:
-        console.print(
-            f"[bold yellow]Warning:[/] description is {len(description)} characters "
-            f"(rendered HTML) — Advocu rejects drafts over {DESCRIPTION_MAX_LENGTH} with HTTP 400. "
-            "Shorten the text before submitting."
-        )
-
-    return click.confirm("Submit draft?", default=True)
+LANGUAGES = ["EN-US", "PT-BR", "ES", "FR", "DE", "JA", "KO", "ZH"]
+CONTENT_TYPES = ["Articles", "Videos", "Podcasts", "Other"]
+EVENT_FORMATS = ["In-Person", "Virtual", "Hybrid"]
 
 
 def _format_title(role: str, event: str, talk: str, lang: str) -> str:
     return f"{role} @ {event} - {talk} ({lang})"
 
 
-# ── Template builders ─────────────────────────────────────────────────────────
+# ── Draft specs ───────────────────────────────────────────────────────────────
+# A "spec" is the human-level description of a draft: the same answers the
+# prompts collect. payload_from_spec() turns it into the API payload, so the
+# interactive flow and `advocu submit --file` build drafts the same way.
+#
 # Notes on API behaviour (confirmed by testing):
 #   - submissionDate → set automatically by the API; rejected if sent in POST
 #   - city           → requires geocoded autocomplete from the web panel; rejected in POST
 #   - eventFormat    → accepted by /activity-drafts/workshop but rejected by /activity-drafts/public-speaking
+#   - durationHours  → rejected on /activity-drafts/workshop
+
+class SpecError(ValueError):
+    """A draft spec is invalid. `errors` lists every problem found."""
+
+    def __init__(self, errors: str | list[str]):
+        self.errors = [errors] if isinstance(errors, str) else list(errors)
+        super().__init__("\n".join(self.errors))
+
+
+# kind -> (required keys, optional keys with their defaults)
+_SPECS: dict[str, tuple[tuple[str, ...], dict]] = {
+    "talk": (
+        ("title", "event", "date", "url", "tags"),
+        {"role": "Speaker", "attendees": 0, "language": "EN-US", "country": "",
+         "description": "", "resources": ()},
+    ),
+    "workshop": (
+        ("title", "event", "date", "url", "tags"),
+        {"role": "Workshop Proctor", "attendees": 0, "language": "EN-US", "country": "",
+         "event_format": "In-Person", "description": "", "resources": ()},
+    ),
+    "content": (
+        ("title", "date", "url", "tags"),
+        {"content_type": "Articles", "language": "EN-US", "readers": 0,
+         "description": "", "resources": ()},
+    ),
+    "story": (
+        ("title", "date", "tags"),
+        {"url": "", "description": ""},
+    ),
+}
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _canonical(value, choices: list[str]) -> str | None:
+    """Case-insensitive match of `value` against the allowed choices."""
+    if isinstance(value, str):
+        for choice in choices:
+            if choice.lower() == value.strip().lower():
+                return choice
+    return None
+
+
+def _parse_date(value) -> str | None:
+    """YYYY-MM-DD from a string or a native TOML date, or None if invalid."""
+    if isinstance(value, datetime):
+        value = value.date()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, str) and _DATE_RE.match(value.strip()):
+        try:
+            date.fromisoformat(value.strip())
+        except ValueError:
+            return None
+        return value.strip()
+    return None
+
+
+def _is_url(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urlparse(value.strip())
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
+def _is_count(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def payload_from_spec(kind: str, spec: dict) -> dict:
+    """Validate a draft spec and build the payload for the Advocu API.
+
+    Raises SpecError listing every problem found, so a file can be fixed in
+    one pass instead of one error at a time.
+    """
+    if kind not in _SPECS:
+        raise SpecError(f"Unknown draft type '{kind}'.")
+    if not isinstance(spec, dict):
+        raise SpecError("The draft must be a set of key = value pairs.")
+
+    required, optional = _SPECS[kind]
+    allowed = set(required) | set(optional)
+    errors: list[str] = []
+
+    unknown = sorted(set(spec) - allowed)
+    if unknown:
+        errors.append(
+            f"Unknown key(s): {', '.join(unknown)}. Allowed: {', '.join(sorted(allowed))}."
+        )
+    for key in required:
+        if spec.get(key) in (None, "", []):
+            errors.append(f"Missing required key: {key}.")
+
+    s = {**optional, **{k: v for k, v in spec.items() if k in allowed}}
+
+    def text(key: str) -> str:
+        value = s.get(key, "")
+        if not isinstance(value, str):
+            errors.append(f"{key} must be text.")
+            return ""
+        return value.strip()
+
+    title = text("title")
+    description = text("description")
+    when = _parse_date(s["date"]) if "date" in s else None
+    if s.get("date") not in (None, "") and when is None:
+        errors.append(f"date must be a real date in YYYY-MM-DD format, got {s['date']!r}.")
+
+    url = text("url") if "url" in s else ""
+    if url and not _is_url(url):
+        errors.append(f"url must start with http:// or https://, got {url!r}.")
+
+    tags = s.get("tags")
+    if tags not in (None, "", []):
+        if not isinstance(tags, list) or not all(isinstance(t, str) and t.strip() for t in tags):
+            errors.append("tags must be a list of non-empty text values.")
+            tags = []
+        else:
+            tags = [t.strip() for t in tags]
+
+    resources: list[tuple[str, str]] = []
+    raw_resources = s.get("resources", ())
+    if not isinstance(raw_resources, (list, tuple)):
+        errors.append("resources must be a list of {name, url} entries.")
+    else:
+        for i, item in enumerate(raw_resources, 1):
+            name = item.get("name") if isinstance(item, dict) else None
+            link = item.get("url") if isinstance(item, dict) else None
+            if not (isinstance(name, str) and name.strip() and _is_url(link)):
+                errors.append(
+                    f"resources #{i} needs a name and a valid http(s) url, got {item!r}."
+                )
+            else:
+                resources.append((name.strip(), link.strip()))
+
+    language = _canonical(s.get("language"), LANGUAGES) if "language" in s else None
+    if "language" in s and language is None:
+        errors.append(f"language must be one of {', '.join(LANGUAGES)}, got {s['language']!r}.")
+
+    count_key = "readers" if kind == "content" else "attendees"
+    count = s.get(count_key, 0)
+    if kind in ("talk", "workshop", "content") and not _is_count(count):
+        errors.append(f"{count_key} must be a whole number, 0 or more, got {count!r}.")
+
+    content_type = event_format = None
+    if kind == "content":
+        content_type = _canonical(s.get("content_type"), CONTENT_TYPES)
+        if content_type is None:
+            errors.append(
+                f"content_type must be one of {', '.join(CONTENT_TYPES)}, got {s.get('content_type')!r}."
+            )
+    if kind == "workshop":
+        event_format = _canonical(s.get("event_format"), EVENT_FORMATS)
+        if event_format is None:
+            errors.append(
+                f"event_format must be one of {', '.join(EVENT_FORMATS)}, got {s.get('event_format')!r}."
+            )
+
+    country = text("country") if kind in ("talk", "workshop") else ""
+    role = (text("role") or optional.get("role", "")) if kind in ("talk", "workshop") else ""
+    event = text("event") if kind in ("talk", "workshop") else ""
+
+    if errors:
+        raise SpecError(errors)
+
+    if kind in ("talk", "workshop"):
+        final_title = _format_title(role, event, title, language)
+    elif kind == "content":
+        final_title = f"{title} ({language})"
+    else:
+        final_title = title
+
+    # Stories take no resources list; everything else appends it to the text.
+    html_body = _md_to_html(description)
+    if kind != "story":
+        html_body += _build_resources_html(resources)
+
+    data: dict = {"title": final_title}
+    if kind == "content":
+        data["contentType"] = content_type
+    data["activityDate"] = when
+    if url:
+        data["activityUrl"] = url
+    data["description"] = html_body
+    data["tags"] = tags
+    if kind != "story":
+        data["metrics"] = {count_key: count}
+    if kind == "workshop":
+        data["eventFormat"] = event_format
+    if country:
+        data["country"] = country
+    data["private"] = False
+    return data
+
+
+def load_spec(path) -> dict:
+    """Read a draft spec from a .json or .toml file."""
+    path = Path(path)
+    suffix = path.suffix.lower()
+    if suffix not in (".json", ".toml"):
+        raise SpecError(f"Unsupported file type '{suffix or path.name}': use a .json or .toml file.")
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise SpecError(f"Could not read {path}: {e.strerror or e}") from e
+    try:
+        spec = json.loads(raw) if suffix == ".json" else tomllib.loads(raw)
+    except (json.JSONDecodeError, tomllib.TOMLDecodeError) as e:
+        raise SpecError(f"{path.name} is not valid {suffix[1:].upper()}: {e}") from e
+    if not isinstance(spec, dict):
+        raise SpecError(f"{path.name} must contain key = value pairs at the top level.")
+    return spec
+
+
+def payload_problems(data: dict) -> tuple[list[str], list[str]]:
+    """Checks on a finished payload: (errors that block sending, warnings)."""
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    size = len(data.get("description", ""))
+    if size > DESCRIPTION_MAX_LENGTH:
+        errors.append(
+            f"description is {size} characters (rendered HTML), and Advocu rejects drafts "
+            f"over {DESCRIPTION_MAX_LENGTH} with HTTP 400. Shorten the text."
+        )
+
+    unknown = [t for t in data.get("tags", []) if t not in SUGGESTED_TAGS]
+    if unknown:
+        warnings.append(
+            f"Tag(s) not in the built-in list: {', '.join(unknown)}. Advocu rejects tags it does "
+            "not know, and the list can be out of date: check the tag dropdown in the web panel."
+        )
+    return errors, warnings
+
+
+# ── Preview and confirmation ──────────────────────────────────────────────────
+
+def render_preview(data: dict) -> None:
+    lines = []
+    for k, v in data.items():
+        if isinstance(v, list):
+            lines.append(f"  [cyan]{k}:[/] {escape(', '.join(str(i) for i in v))}")
+        elif isinstance(v, dict):
+            for sk, sv in v.items():
+                lines.append(f"  [cyan]{k}.{sk}:[/] {escape(str(sv)[:100])}")
+        else:
+            val = str(v)
+            lines.append(f"  [cyan]{k}:[/] {escape(val[:120])}{'…' if len(val) > 120 else ''}")
+    console.print(Panel("\n".join(lines), title="Payload preview", border_style="blue"))
+
+
+def print_warnings(messages: list[str]) -> None:
+    for message in messages:
+        console.print(f"[bold yellow]Warning:[/] {escape(message)}")
+
+
+def _confirm_payload(data: dict) -> bool:
+    render_preview(data)
+    errors, warnings = payload_problems(data)
+    # Interactively these are advice, not a hard stop: the API has the final say.
+    print_warnings(errors + warnings)
+    return click.confirm("Submit draft?", default=True)
+
+
+# ── Interactive builders ──────────────────────────────────────────────────────
+# Each one asks the questions, then hands the answers to payload_from_spec().
+
+def _finish(kind: str, spec: dict) -> dict | None:
+    try:
+        data = payload_from_spec(kind, spec)
+    except SpecError as e:
+        for problem in e.errors:
+            console.print(f"[bold red]Problem:[/] {escape(problem)}")
+        return None
+    return {"data": data} if _confirm_payload(data) else None
+
+
+def _ask_language() -> str:
+    return click.prompt(
+        "Language", default="EN-US", type=click.Choice(LANGUAGES, case_sensitive=False),
+    )
 
 
 def build_talk() -> dict | None:
     click.echo("\n🎤  New talk (public-speaking)\n")
 
-    role          = _ask("Your role at the event", default="Speaker")
-    talk_title    = _ask("Talk title")
-    event_name    = _ask("Event name")
-    activity_date = _ask_date("Activity date (YYYY-MM-DD)")
-    event_url     = _ask_url("Event URL")
-    attendees     = click.prompt("Number of attendees (approx.)", default=0, type=int)
-    language      = click.prompt(
-        "Language", default="EN-US",
-        type=click.Choice(["EN-US", "PT-BR", "ES", "FR", "DE", "JA", "KO", "ZH"], case_sensitive=False),
-    )
-    country       = _ask_country()
-    tags          = _ask_tags()
-    body_text     = _ask_text_block("Descriptive text (post, notes, summary):")
-    resources     = _ask_resources()
-
-    data: dict = {
-        "title": _format_title(role, event_name, talk_title, language),
-        "activityDate": activity_date,
-        "activityUrl": event_url,
-        "description": _md_to_html(body_text) + _build_resources_html(resources),
-        "tags": tags,
-        "metrics": {"attendees": attendees},
-        "country": country,
-        "private": False,
+    spec = {
+        "role":        _ask("Your role at the event", default="Speaker"),
+        "title":       _ask("Talk title"),
+        "event":       _ask("Event name"),
+        "date":        _ask_date("Activity date (YYYY-MM-DD)"),
+        "url":         _ask_url("Event URL"),
+        "attendees":   click.prompt("Number of attendees (approx.)", default=0, type=int),
+        "language":    _ask_language(),
+        "country":     _ask_country(),
+        "tags":        _ask_tags(),
+        "description": _ask_text_block("Descriptive text (post, notes, summary):"),
+        "resources":   [{"name": n, "url": u} for n, u in _ask_resources()],
     }
-    if not country:
-        data.pop("country")
-
-    return {"data": data} if _confirm_payload(data) else None
+    return _finish("talk", spec)
 
 
 def build_workshop() -> dict | None:
     click.echo("\n🛠️  New workshop\n")
 
-    role           = _ask("Your role at the event", default="Workshop Proctor")
-    workshop_title = _ask("Workshop title")
-    event_name     = _ask("Event name")
-    activity_date  = _ask_date("Activity date (YYYY-MM-DD)")
-    event_url      = _ask_url("Event URL")
-    attendees      = click.prompt("Number of attendees", default=0, type=int)
-    language       = click.prompt(
-        "Language", default="EN-US",
-        type=click.Choice(["EN-US", "PT-BR", "ES", "FR", "DE", "JA", "KO", "ZH"], case_sensitive=False),
-    )
-    country        = _ask_country()
-    tags           = _ask_tags()
-    body_text      = _ask_text_block("Descriptive text (post, notes, summary):")
-    resources      = _ask_resources()
-
-    data: dict = {
-        "title": _format_title(role, event_name, workshop_title, language),
-        "activityDate": activity_date,
-        "activityUrl": event_url,
-        "description": _md_to_html(body_text) + _build_resources_html(resources),
-        "tags": tags,
-        "metrics": {"attendees": attendees},
-        "eventFormat": "In-Person",
-        "country": country,
-        "private": False,
+    spec = {
+        "role":        _ask("Your role at the event", default="Workshop Proctor"),
+        "title":       _ask("Workshop title"),
+        "event":       _ask("Event name"),
+        "date":        _ask_date("Activity date (YYYY-MM-DD)"),
+        "url":         _ask_url("Event URL"),
+        "attendees":   click.prompt("Number of attendees", default=0, type=int),
+        "language":    _ask_language(),
+        "country":     _ask_country(),
+        "tags":        _ask_tags(),
+        "description": _ask_text_block("Descriptive text (post, notes, summary):"),
+        "resources":   [{"name": n, "url": u} for n, u in _ask_resources()],
     }
-    if not country:
-        data.pop("country")
-
-    return {"data": data} if _confirm_payload(data) else None
+    return _finish("workshop", spec)
 
 
 def build_content() -> dict | None:
     click.echo("\n📝  New content (content-creation)\n")
 
-    content_type = click.prompt(
-        "Content type",
-        type=click.Choice(["Articles", "Videos", "Podcasts", "Other"], case_sensitive=False),
-        default="Articles",
-    )
-    title     = _ask("Title")
-    pub_date  = _ask_date("Publication date (YYYY-MM-DD)")
-    url       = _ask_url("Content URL")
-    language  = click.prompt(
-        "Language", default="EN-US",
-        type=click.Choice(["EN-US", "PT-BR", "ES", "FR", "DE", "JA", "KO", "ZH"], case_sensitive=False),
-    )
-    readers   = click.prompt("Views / readers (approx.)", default=0, type=int)
-    tags      = _ask_tags()
-    body_text = _ask_text_block("Descriptive text:")
-    resources = _ask_resources()
-
-    data: dict = {
-        "title": f"{title} ({language})",
-        "contentType": content_type,
-        "activityDate": pub_date,
-        "activityUrl": url,
-        "description": _md_to_html(body_text) + _build_resources_html(resources),
-        "tags": tags,
-        "metrics": {"readers": readers},
-        "private": False,
+    spec = {
+        "content_type": click.prompt(
+            "Content type",
+            type=click.Choice(CONTENT_TYPES, case_sensitive=False),
+            default="Articles",
+        ),
+        "title":       _ask("Title"),
+        "date":        _ask_date("Publication date (YYYY-MM-DD)"),
+        "url":         _ask_url("Content URL"),
+        "language":    _ask_language(),
+        "readers":     click.prompt("Views / readers (approx.)", default=0, type=int),
+        "tags":        _ask_tags(),
+        "description": _ask_text_block("Descriptive text:"),
+        "resources":   [{"name": n, "url": u} for n, u in _ask_resources()],
     }
-
-    return {"data": data} if _confirm_payload(data) else None
+    return _finish("content", spec)
 
 
 def build_story() -> dict | None:
     click.echo("\n📸  New story\n")
 
-    title         = _ask("Title / caption")
-    activity_date = _ask_date("Activity date (YYYY-MM-DD)")
-    url           = _ask_url("Story URL (optional)", required=False)
-    tags          = _ask_tags()
-    body_text     = _ask_text_block("Description:")
-
-    data: dict = {
-        "title": title,
-        "activityDate": activity_date,
-        "description": _md_to_html(body_text),
-        "tags": tags,
-        "private": False,
+    spec = {
+        "title":       _ask("Title / caption"),
+        "date":        _ask_date("Activity date (YYYY-MM-DD)"),
+        "url":         _ask_url("Story URL (optional)", required=False),
+        "tags":        _ask_tags(),
+        "description": _ask_text_block("Description:"),
     }
-    if url:
-        data["activityUrl"] = url
-
-    return {"data": data} if _confirm_payload(data) else None
+    return _finish("story", spec)

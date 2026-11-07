@@ -4,6 +4,7 @@ import json
 import sys
 from collections import Counter, defaultdict
 from datetime import date
+from pathlib import Path
 
 import click
 import requests
@@ -13,7 +14,18 @@ from rich import box
 
 from . import __version__
 from .api import AdvocuClient
-from .templates import build_talk, build_workshop, build_content, build_story
+from .templates import (
+    SpecError,
+    build_content,
+    build_story,
+    build_talk,
+    build_workshop,
+    load_spec,
+    payload_from_spec,
+    payload_problems,
+    print_warnings,
+    render_preview,
+)
 
 console = Console()
 
@@ -160,60 +172,98 @@ def _post_result(result: dict):
     console.print("  3. [bold]Publish[/]\n")
 
 
-@submit.command("talk")
-@click.pass_context
-def submit_talk(ctx):
-    """Draft a talk (public-speaking)."""
-    payload = build_talk()
-    if payload is None:
-        console.print("Cancelled.")
-        return
+# kind -> (interactive builder, AdvocuClient method that creates the draft)
+_SUBMITTERS = {
+    "talk": (build_talk, "create_talk_draft"),
+    "workshop": (build_workshop, "create_workshop_draft"),
+    "content": (build_content, "create_content_draft"),
+    "story": (build_story, "create_story_draft"),
+}
+
+
+def _submit_options(fn):
+    fn = click.option(
+        "--yes", "-y", is_flag=True,
+        help="With --file: send without asking for confirmation.",
+    )(fn)
+    fn = click.option(
+        "--dry-run", is_flag=True,
+        help="With --file: validate and preview the draft, send nothing (works offline, no token needed).",
+    )(fn)
+    fn = click.option(
+        "--file", "-f", "spec_file",
+        type=click.Path(exists=True, dir_okay=False, path_type=Path),
+        help="Read the draft from a .json or .toml file instead of prompting.",
+    )(fn)
+    return fn
+
+
+def _run_submit(ctx, kind: str, spec_file: Path | None, dry_run: bool, yes: bool):
+    build, method = _SUBMITTERS[kind]
+
+    if spec_file is None:
+        if dry_run or yes:
+            raise click.UsageError("--dry-run and --yes only apply together with --file.")
+        payload = build()
+        if payload is None:
+            console.print("Cancelled.")
+            return
+        data = payload["data"]
+    else:
+        try:
+            data = payload_from_spec(kind, load_spec(spec_file))
+        except SpecError as e:
+            problems = "\n".join(f"  - {p}" for p in e.errors)
+            raise click.ClickException(f"{spec_file.name} is not a valid {kind} draft:\n{problems}") from e
+
+        render_preview(data)
+        errors, warnings = payload_problems(data)
+        print_warnings(warnings)
+        if errors:
+            raise click.ClickException("\n".join(errors))
+        if dry_run:
+            console.print("\n[green]✓ Dry run: the draft is valid, nothing was sent.[/]")
+            return
+        if not yes and not click.confirm("Submit draft?", default=True):
+            console.print("Cancelled.")
+            return
+
     client = get_client(ctx.obj["token"])
     with console.status("Submitting…"):
-        result = client.create_talk_draft(payload["data"])
+        result = getattr(client, method)(data)
     _post_result(result)
+
+
+@submit.command("talk")
+@_submit_options
+@click.pass_context
+def submit_talk(ctx, spec_file, dry_run, yes):
+    """Draft a talk (public-speaking). Prompts, or reads --file (.json/.toml)."""
+    _run_submit(ctx, "talk", spec_file, dry_run, yes)
 
 
 @submit.command("workshop")
+@_submit_options
 @click.pass_context
-def submit_workshop(ctx):
-    """Draft a workshop."""
-    payload = build_workshop()
-    if payload is None:
-        console.print("Cancelled.")
-        return
-    client = get_client(ctx.obj["token"])
-    with console.status("Submitting…"):
-        result = client.create_workshop_draft(payload["data"])
-    _post_result(result)
+def submit_workshop(ctx, spec_file, dry_run, yes):
+    """Draft a workshop. Prompts, or reads --file (.json/.toml)."""
+    _run_submit(ctx, "workshop", spec_file, dry_run, yes)
 
 
 @submit.command("content")
+@_submit_options
 @click.pass_context
-def submit_content(ctx):
-    """Draft a content activity (article, video, podcast…)."""
-    payload = build_content()
-    if payload is None:
-        console.print("Cancelled.")
-        return
-    client = get_client(ctx.obj["token"])
-    with console.status("Submitting…"):
-        result = client.create_content_draft(payload["data"])
-    _post_result(result)
+def submit_content(ctx, spec_file, dry_run, yes):
+    """Draft a content activity (article, video, podcast…). Prompts, or reads --file."""
+    _run_submit(ctx, "content", spec_file, dry_run, yes)
 
 
 @submit.command("story")
+@_submit_options
 @click.pass_context
-def submit_story(ctx):
-    """Draft a story."""
-    payload = build_story()
-    if payload is None:
-        console.print("Cancelled.")
-        return
-    client = get_client(ctx.obj["token"])
-    with console.status("Submitting…"):
-        result = client.create_story_draft(payload["data"])
-    _post_result(result)
+def submit_story(ctx, spec_file, dry_run, yes):
+    """Draft a story. Prompts, or reads --file (.json/.toml)."""
+    _run_submit(ctx, "story", spec_file, dry_run, yes)
 
 
 # ── stats ─────────────────────────────────────────────────────────────────────

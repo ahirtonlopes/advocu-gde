@@ -43,8 +43,8 @@ These were discovered through live testing and are not officially documented:
 | `PATCH /activities/{id}` | Expects `{"data": {...}}` wrapper |
 
 Other limits:
-- `description` (rendered HTML) is capped at **2000 characters** — the CLI
-  warns before submitting if you're over
+- `description` (rendered HTML) is capped at **2000 characters**: the
+  interactive flow warns before submitting, and `submit --file` refuses to send
 
 Fields that must be completed via the Advocu web panel:
 - **City** — requires geocoded autocomplete
@@ -52,6 +52,27 @@ Fields that must be completed via the Advocu web panel:
 
 If you discover new API behaviour, please open an issue or PR updating
 this list and the relevant code comments.
+
+## Adding a new draft type
+
+Per the Personal API docs (July 2026), a few draft endpoints are not covered
+yet: `interaction-with-googlers`, `mentoring` and `product-feedback-given`.
+To add one:
+
+1. `api.py`: add `create_<type>_draft()`, posting to `/activity-drafts/<endpoint>`.
+2. `templates.py`: add the type to `_SPECS` (required keys, optional keys with
+   their defaults) and the branch in `payload_from_spec()` that builds the API
+   payload. Then add a `build_<type>()` that asks the questions and ends with
+   `_finish()`.
+3. `cli.py`: add the builder and the client method name to `_SUBMITTERS`, and a
+   `submit <type>` command like the existing ones.
+4. `examples/<type>.toml` (or `.json`): a template for `submit --file`. A test
+   loads every file in `examples/`, so it cannot go stale. Add the type to
+   `test_there_is_an_example_for_each_draft_type` too.
+5. Tests for the payload (`tests/test_payloads.py`) and the command
+   (`tests/test_cli.py`).
+6. Try it against the real API and record any field it rejects in the tables
+   above, with the exact error.
 
 ## Code style
 
