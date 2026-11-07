@@ -1,6 +1,5 @@
-from importlib.metadata import version, PackageNotFoundError
+"""advocu-gde: a CLI for managing Advocu activities via the Personal API."""
 
-try:
-    __version__ = version("advocu-manager")
-except PackageNotFoundError:
-    __version__ = "unknown"
+# Single source of truth: pyproject.toml reads this value (dynamic version),
+# so `advocu --version` is right even when running straight from a checkout.
+__version__ = "1.1.0"

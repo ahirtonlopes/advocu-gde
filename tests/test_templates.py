@@ -59,6 +59,26 @@ class TestInline:
             " and <em>emphasis</em> too."
         )
 
+    def test_snake_case_identifier_stays_literal(self):
+        # Regression: before_tool_callback used to become before<em>tool</em>callback.
+        assert _inline("Use before_tool_callback here") == "Use before_tool_callback here"
+
+    def test_several_identifiers_on_one_line_stay_literal(self):
+        text = "Call exit_loop or before_tool_callback, not __init__ or _private_var"
+        assert _inline(text) == text
+
+    def test_italic_still_works_next_to_identifiers(self):
+        assert _inline("Use exit_loop and _really_ mean it") == (
+            "Use exit_loop and <em>really</em> mean it"
+        )
+
+    def test_italic_with_punctuation_boundaries(self):
+        assert _inline("(_note_), _a b c_.") == "(<em>note</em>), <em>a b c</em>."
+
+    def test_underscore_inside_word_is_not_emphasis(self):
+        assert _inline("a_b_c") == "a_b_c"
+        assert _inline("_x_y") == "_x_y"
+
     def test_bold_and_link_together(self):
         html = _inline("**Bold** and [a link](https://example.com/path_here)")
         assert html == (

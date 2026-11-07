@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 
+from . import __version__
 from .api import AdvocuClient
 from .templates import build_talk, build_workshop, build_content, build_story
 
@@ -27,6 +28,7 @@ def get_client(token: str | None) -> AdvocuClient:
 # ── Root group ───────────────────────────────────────────────────────────────
 
 @click.group()
+@click.version_option(__version__, "--version", "-V", prog_name="advocu")
 @click.option(
     "--token", "-t",
     envvar="ADVOCU_TOKEN",

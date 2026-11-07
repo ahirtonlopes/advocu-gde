@@ -155,9 +155,15 @@ def _inline(text: str) -> str:
 
     text = re.sub(r'\[([^\]]+)\]\((https?://[^\)]+)\)', _stash_link, text)
 
-    # **bold** and _italic_
+    # **bold** and _italic_. Like CommonMark, an underscore only opens or closes
+    # emphasis at a word boundary, so snake_case identifiers (exit_loop,
+    # before_tool_callback, __init__) in a technical description stay literal.
     text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
-    text = re.sub(r'_(.+?)_', r'<em>\1</em>', text)
+    text = re.sub(
+        r'(?<![A-Za-z0-9_])_(?![\s_])(.+?)(?<![\s_])_(?![A-Za-z0-9_])',
+        r'<em>\1</em>',
+        text,
+    )
 
     for i, link_html in enumerate(links):
         text = text.replace(f"\x00LINK{i}\x00", link_html)
