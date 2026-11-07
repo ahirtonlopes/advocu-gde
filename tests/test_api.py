@@ -74,6 +74,27 @@ class TestRequests:
             f"{BASE_URL}/activity-drafts/workshop", json={"title": "x"}, timeout=DEFAULT_TIMEOUT
         )
 
+    @pytest.mark.parametrize(
+        "method, endpoint",
+        [
+            ("create_content_draft", "content-creation"),
+            ("create_story_draft", "stories"),
+            ("create_interaction_draft", "interaction-with-googlers"),
+            ("create_feedback_draft", "product-feedback-given"),
+            ("create_mentoring_draft", "mentoring"),
+        ],
+    )
+    def test_every_draft_method_posts_to_its_endpoint(self, monkeypatch, method, endpoint):
+        client = AdvocuClient(token="t")
+        mock_post = MagicMock(return_value=make_response(json_body={"id": "abc"}))
+        monkeypatch.setattr(client.session, "post", mock_post)
+
+        assert getattr(client, method)({"title": "x"}) == {"id": "abc"}
+
+        mock_post.assert_called_once_with(
+            f"{BASE_URL}/activity-drafts/{endpoint}", json={"title": "x"}, timeout=DEFAULT_TIMEOUT
+        )
+
     def test_update_activity_wraps_fields_in_data(self, monkeypatch):
         client = AdvocuClient(token="t")
         mock_patch = MagicMock(return_value=make_response(json_body={}))

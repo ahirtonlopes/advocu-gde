@@ -41,3 +41,4 @@ include = ["advocu_manager*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

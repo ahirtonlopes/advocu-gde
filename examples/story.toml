@@ -1,9 +1,11 @@
 #   advocu submit story --file examples/story.toml --dry-run
 
 title = "Mentoring session at the local GDG"
-date = 2026-09-12
 url = "https://www.linkedin.com/feed/update/urn:li:activity:example/"   # optional
+significance_type = "Community Leading"   # optional
+impact = 2500                                # optional: people reached, 1 or more
 tags = ["AI"]
+# Stories have no date. The text is the "Why is this significant?" field.
 description = """
 Spent the afternoon with the community answering questions about getting started with agents.
 """

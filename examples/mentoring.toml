@@ -1,0 +1,16 @@
+#   advocu submit mentoring --file examples/mentoring.toml --dry-run
+
+title = "Mentoring developers in agentic AI"
+date = 2026-09-12
+url = "https://example.com/mentoring-program"   # optional
+attendees = 3                                    # people mentored, 1 or more
+event_format = "Virtual"                         # In-Person, Virtual or Hybrid
+country = "Brazil"                               # optional
+language = "PT-BR"
+tags = ["AI"]
+description = """
+Mentored a small group of developers moving from chatbots to agents.
+
+* Weekly sessions, with code review;
+* A final demo of what each person built.
+"""

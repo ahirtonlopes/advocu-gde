@@ -17,6 +17,9 @@ from .api import AdvocuClient
 from .templates import (
     SpecError,
     build_content,
+    build_feedback,
+    build_interaction,
+    build_mentoring,
     build_story,
     build_talk,
     build_workshop,
@@ -178,6 +181,9 @@ _SUBMITTERS = {
     "workshop": (build_workshop, "create_workshop_draft"),
     "content": (build_content, "create_content_draft"),
     "story": (build_story, "create_story_draft"),
+    "interaction": (build_interaction, "create_interaction_draft"),
+    "feedback": (build_feedback, "create_feedback_draft"),
+    "mentoring": (build_mentoring, "create_mentoring_draft"),
 }
 
 
@@ -264,6 +270,30 @@ def submit_content(ctx, spec_file, dry_run, yes):
 def submit_story(ctx, spec_file, dry_run, yes):
     """Draft a story. Prompts, or reads --file (.json/.toml)."""
     _run_submit(ctx, "story", spec_file, dry_run, yes)
+
+
+@submit.command("interaction")
+@_submit_options
+@click.pass_context
+def submit_interaction(ctx, spec_file, dry_run, yes):
+    """Draft an interaction with Googlers. Prompts, or reads --file (.json/.toml)."""
+    _run_submit(ctx, "interaction", spec_file, dry_run, yes)
+
+
+@submit.command("feedback")
+@_submit_options
+@click.pass_context
+def submit_feedback(ctx, spec_file, dry_run, yes):
+    """Draft product feedback given to Google. Prompts, or reads --file (.json/.toml)."""
+    _run_submit(ctx, "feedback", spec_file, dry_run, yes)
+
+
+@submit.command("mentoring")
+@_submit_options
+@click.pass_context
+def submit_mentoring(ctx, spec_file, dry_run, yes):
+    """Draft a mentoring activity. Prompts, or reads --file (.json/.toml)."""
+    _run_submit(ctx, "mentoring", spec_file, dry_run, yes)
 
 
 # ── stats ─────────────────────────────────────────────────────────────────────

@@ -1,0 +1,13 @@
+#   advocu submit feedback --file examples/feedback.toml --dry-run
+# "Product feedback given": feedback sessions and early access programs.
+
+title = "Monthly product feedback session"
+date = 2026-10-22
+content_type = "Product feedback session"   # or "Early access program"
+product_description = "JAX: intro to MaxText and MaxDiffusion"   # max 500 characters once rendered
+minutes = 45
+language = "EN-US"
+tags = ["AI", "AI - JAX"]
+description = """
+A discussion session with the product team about the latest release.
+"""

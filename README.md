@@ -45,6 +45,7 @@ That's it — see [How submissions work](#how-submissions-work-important--read-t
 - [Rate limiting](#rate-limiting)
 - [Errors and timeouts](#errors-and-timeouts)
 - [Known API limitations](#known-api-limitations)
+- [Keeping up with the API](#keeping-up-with-the-api)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -53,7 +54,7 @@ That's it — see [How submissions work](#how-submissions-work-important--read-t
 ## What this tool does
 
 - **Lists** all your submitted activities with automatic pagination
-- **Submits** drafts for talks, workshops, content (articles/videos/podcasts), and stories
+- **Submits** drafts for all seven activity types the Personal API offers: talks, workshops, content (articles, videos, podcasts, books, newsletters, demos), stories, interactions with Googlers, product feedback and mentoring
 - **Updates** existing activities via PATCH (fix titles, dates, URLs)
 - **Converts Markdown to HTML** automatically — paste your LinkedIn post or event notes and the tool formats it correctly for Advocu's editor, including clickable links for slides, codelabs, and repositories
 
@@ -139,7 +140,7 @@ advocu --token YOUR_TOKEN list
 The Advocu Personal API **creates drafts**, not published activities. Think of it as pre-filling the form for you. The full flow is:
 
 ```
-advocu submit talk|workshop|content|story
+advocu submit talk|workshop|content|story|interaction|feedback|mentoring
         ↓
   Draft created via API with:
     title, date, URL, description (HTML with links), tags, metrics, country
@@ -156,18 +157,19 @@ This is not a limitation of this tool — it reflects what the Advocu Personal A
 
 ### What the API accepts
 
-| Field | talk | workshop | content | story |
-|---|---|---|---|---|
-| `title` | ✅ | ✅ | ✅ | ✅ |
-| `activityDate` | ✅ | ✅ | ✅ | ✅ |
-| `activityUrl` | ✅ | ✅ | ✅ | ✅ |
-| `description` (HTML) | ✅ | ✅ | ✅ | ✅ |
-| `tags` | ✅ | ✅ | ✅ | ✅ |
-| `metrics` (attendees/readers) | ✅ | ✅ | ✅ | ✅ |
-| `country` | ✅ | ✅ | — | — |
-| `eventFormat` | ❌ * | ✅ | — | — |
+Every draft also takes `title`, `tags`, `private`, and a text field (`description`, or `whyIsSignificant` for stories). These are the fields each endpoint accepts besides those, checked against the live API on 2026-11-07:
 
-\* `eventFormat` is rejected by the `/activity-drafts/public-speaking` endpoint. For workshops, accepted values are `In-Person`, `Virtual`, and `Hybrid`.
+| Command | Endpoint | Other fields |
+|---|---|---|
+| `talk` | `public-speaking` | `activityDate`, `activityUrl`, `metrics.attendees`, `inPersonAttendees`, `eventFormat`, `country`, `additionalInfo` |
+| `workshop` | `workshop` | the same as `talk` |
+| `content` | `content-creation` | `contentType`, `activityDate`, `activityUrl`, `metrics.readers`, `additionalInfo` |
+| `story` | `stories` | `significanceType`, `activityUrl`, `metrics.impact`, `additionalInfo`. **No date** |
+| `interaction` | `interaction-with-googlers` | `interactionType`, `format`, `activityDate`, `metrics.timeSpent`, `additionalLinks`, `additionalInfo` |
+| `feedback` | `product-feedback-given` | `contentType`, `productDescription`, `activityDate`, `metrics.timeSpent`, `additionalInfo` |
+| `mentoring` | `mentoring` | `activityDate`, `activityUrl`, `metrics.attendees`, `inPersonAttendees`, `eventFormat`, `country`, `additionalInfo` |
+
+Metrics are whole numbers of **1 or more**: the API refuses `0`, so leave a metric out when you do not know it (the CLI does this for you when you answer `0` to skip).
 
 ### What must be done manually in the web panel
 
@@ -227,10 +229,11 @@ Talk title: Real World Design with Agent Development Kit (ADK)
 Event name: Google I/O Extended São Paulo
 Activity date (YYYY-MM-DD): 2024-06-20
 Event URL: https://gdg.community.dev/events/details/google-...
-Number of attendees (approx.) [0]: 150
+Number of attendees (approx.) (0 to skip) [0]: 150
+Event format (In-Person, Virtual, Hybrid) [In-Person]:
 Language [EN-US]: PT-BR
 Country: Brazil
-Tags: AI, AI - Agents, AI - Agent Development Kit (ADK)
+Tags: AI, AI - Agent Development Kit (ADK), AI - Gemini
 
 Descriptive text (post, notes, summary):
   Supports Markdown: **bold**, [text](url), * list item, → item
@@ -265,7 +268,7 @@ After sending, you'll see the draft ID and the steps to complete it in the web p
 
 ### `advocu submit workshop` — Submit a workshop draft
 
-Same flow as a talk, with one extra field: event format.
+Same flow as a talk. The event format defaults to `In-Person`.
 
 ```bash
 advocu submit workshop
@@ -275,13 +278,13 @@ advocu submit workshop
 
 ### `advocu submit content` — Submit a content activity
 
-For articles, videos, and podcasts. Asks for content type, publication date, URL, and view/reader count.
+For articles, videos, podcasts and more. Asks for content type, publication date, URL, and view/reader count.
 
 ```bash
 advocu submit content
 ```
 
-Content types: `Articles`, `Videos`, `Podcasts`, `Other`
+Content types: `Articles`, `Videos`, `Podcasts`, `Books`, `Newsletters`, `Demos`
 
 **Example:**
 
@@ -293,7 +296,7 @@ Title: Introduction to Gemini API — Getting Started
 Publication date (YYYY-MM-DD): 2024-05-10
 Content URL: https://youtube.com/watch?v=...
 Language [EN-US]:
-Views / readers (approx.) [0]: 3500
+Views / readers (approx.) (0 to skip) [0]: 3500
 Tags: AI, AI - Gemini
 ```
 
@@ -304,6 +307,40 @@ Tags: AI, AI - Gemini
 ```bash
 advocu submit story
 ```
+
+Stories have no date in the API. The text you write is Advocu's "Why is this significant?" field, and you can set the significance (`Community Leading`, `Social Impact`, ...) and how many people it reached.
+
+---
+
+### `advocu submit interaction` - Interactions with Googlers
+
+Sessions with Google product teams: councils, feedback sessions, training seminars. Asks for the interaction type, the format and the time spent in minutes.
+
+```bash
+advocu submit interaction
+```
+
+The title becomes `Title @ Event (LANG)` when you name an event.
+
+---
+
+### `advocu submit feedback` - Product feedback given to Google
+
+Feedback sessions and early access programs. Asks for the type, a short description of the product (up to 500 characters) and the time spent in minutes.
+
+```bash
+advocu submit feedback
+```
+
+---
+
+### `advocu submit mentoring` - Mentoring
+
+```bash
+advocu submit mentoring
+```
+
+Asks for how many people you mentored and the event format, with the country for in-person and hybrid mentoring.
 
 ---
 
@@ -406,6 +443,7 @@ event = "DevFest Example City 2026"
 date = 2026-10-31
 url = "https://gdg.community.dev/events/details/example-devfest/"
 attendees = 120
+event_format = "In-Person"
 language = "PT-BR"
 country = "Brazil"
 tags = ["AI", "AI - Agent Development Kit (ADK)", "AI - Gemini"]
@@ -421,28 +459,38 @@ name = "Slides"
 url = "https://example.com/slides.pdf"
 ```
 
-| Key | talk | workshop | content | story | Notes |
-|---|---|---|---|---|---|
-| `title` | required | required | required | required | Final title: `Role @ Event - Title (LANG)` for talks and workshops, `Title (LANG)` for content |
-| `event` | required | required | - | - | Event name |
-| `date` | required | required | required | required | `YYYY-MM-DD`, quoted or as a native TOML date |
-| `url` | required | required | required | optional | `http://` or `https://` |
-| `tags` | required | required | required | required | List of text; see the tag list in `templates.py` |
-| `description` | optional | optional | optional | optional | Markdown, see [the reference](#markdown-reference-for-descriptions) |
-| `resources` | optional | optional | optional | - | List of `{name, url}`, appended as a "Resources" list |
-| `role` | `Speaker` | `Workshop Proctor` | - | - | Defaults shown |
-| `attendees` | `0` | `0` | - | - | Whole number |
-| `readers` | - | - | `0` | - | Views or readers |
-| `language` | `EN-US` | `EN-US` | `EN-US` | - | EN-US, PT-BR, ES, FR, DE, JA, KO, ZH. The language the material is delivered in |
-| `country` | optional | optional | - | - | The city is set later in the web panel |
-| `event_format` | - | `In-Person` | - | - | In-Person, Virtual or Hybrid |
-| `content_type` | - | - | `Articles` | - | Articles, Videos, Podcasts or Other |
+| Key | Used by | Default | Notes |
+|---|---|---|---|
+| `title` | all | required | Final title: `Role @ Event - Title (LANG)` for talks and workshops, `Title @ Event (LANG)` for interactions, `Title (LANG)` for the rest (stories keep it as written) |
+| `event` | talk, workshop (required), interaction | - | Event name |
+| `date` | all except story | required | `YYYY-MM-DD`, quoted or as a native TOML date. Stories have no date |
+| `url` | talk, workshop, content (required), story, mentoring | - | `http://` or `https://` |
+| `tags` | all | required | List of text; the built-in list is in `templates.py` |
+| `description` | all | empty | Markdown, see [the reference](#markdown-reference-for-descriptions). For stories it fills "Why is this significant?" |
+| `additional_info` | all | - | Plain text, up to 2000 characters |
+| `resources` | all except story | - | List of `{name, url}`, appended as a "Resources" list |
+| `role` | talk, workshop | `Speaker`, `Workshop Proctor` | |
+| `language` | all except story | `EN-US` | EN-US, PT-BR, ES, FR, DE, JA, KO, ZH. The language the material is delivered in |
+| `attendees` | talk, workshop, mentoring | left out | Whole number, 1 or more (people mentored, for mentoring) |
+| `in_person_attendees` | talk, workshop, mentoring | left out | 0 or more. For hybrid events: how many were in the room |
+| `readers` | content | left out | Views or readers, 1 or more |
+| `minutes` | interaction, feedback | left out | Time spent, whole minutes, 1 or more |
+| `impact` | story | left out | People reached, 1 or more |
+| `country` | talk, workshop, mentoring | left out | The city is set later in the web panel |
+| `event_format` | talk, workshop, mentoring | workshop: `In-Person`; others left out | In-Person, Virtual or Hybrid |
+| `content_type` | content, feedback | `Articles`, `Product feedback session` | content: Articles, Videos, Podcasts, Books, Newsletters, Demos. feedback: Early access program, Product feedback session |
+| `interaction_type` | interaction | required | Product feedback (research studies, roadmap input, Customer Advisory Boards, EAP); File bugs / help out with finding bugs; GitHub; Stack Overflow; Industry; Other interactions with Google Product Teams |
+| `format` | interaction | required | Survey; Video feedback; In-person feedback sessions; Online feedback sessions; Feedback summits; User study / focus group; Feedback submissions; Other |
+| `additional_links` | interaction | - | Text |
+| `product_description` | feedback | required | Markdown, up to 500 characters once rendered |
+| `significance_type` | story | left out | Diversity & Inclusion; Helping Business; Social Impact; Feedback to Google; Community Leading; Technology / Open source |
 
 What the CLI checks before sending anything:
 
 - **Every problem is listed at once**, so you fix the file in a single pass. A misspelled key (`atendees`) is reported with the list of allowed keys instead of being ignored.
-- **A description over 2000 characters blocks the submission** (see [Known API limitations](#known-api-limitations)); with `--dry-run` it fails too, which makes it usable as a check in CI.
-- **A tag that is not in the built-in list only warns.** Advocu changes its tags without notice, so the CLI does not refuse them; the API has the last word.
+- **A text over the API's limits blocks the submission** (description 2000 characters, title 3 to 200, product description 500; see [Known API limitations](#known-api-limitations)); with `--dry-run` it fails too, which makes it usable as a check in CI.
+- **A tag that is not in the built-in list only warns.** Advocu changes its tags without notice, so the CLI does not refuse them; the API has the last word. Hybrid and in-person events without a country, or with more people in the room than in total, also only warn.
+- **Allowed values are checked** (`event_format`, `content_type`, `format`, ...) and the error lists the valid ones.
 
 Exit codes: `0` sent, or a dry run that passed; `1` invalid draft, or an error from the API or the network; `2` wrong command-line usage (for example a file that does not exist).
 
@@ -528,7 +576,8 @@ advocu-gde/
 │   ├── cli.py            # Click CLI commands
 │   └── templates.py      # Draft specs, validation, prompts, Markdown→HTML converter
 ├── examples/             # Ready-to-copy draft files for `submit --file` (tested)
-├── tests/                # pytest suite (parser, client, drafts, CLI)
+├── tools/check_api.py    # Compares this project with the live API (see below)
+├── tests/                # pytest suite (parser, client, drafts, CLI, checker)
 ├── .github/workflows/    # CI — runs the test suite on every push/PR
 ├── pyproject.toml
 ├── requirements.txt
@@ -562,17 +611,35 @@ For a rejected draft, the part in brackets is what Advocu says is wrong, which i
 
 ## Known API limitations
 
-These were discovered through live testing and are not officially documented by Advocu:
+Discovered through live testing; Advocu does not document them. Last checked against the API on **2026-11-07**.
 
-- `submissionDate` cannot be set via POST (it's assigned automatically)
+- `submissionDate` cannot be set (it is assigned automatically)
 - `city` is validated against Google Places and cannot be sent as free text
-- Image upload is not available via the Personal API for GDE accounts
-- `eventFormat` is accepted by `/activity-drafts/workshop` but rejected by `/activity-drafts/public-speaking`
-- `durationHours` is rejected as an extraneous key by `/activity-drafts/workshop` — not exposed by the API despite being a natural fit for workshops
-- `description` (rendered HTML, tags included) is capped at 2000 characters: POSTs over that return HTTP 400 with `expected maxLength: 2000`. The interactive flow warns before submitting if you are over, and `submit --file` refuses to send.
-- PATCH requests are handled automatically by the CLI — fields are wrapped in `{"data": {...}}` internally
+- `imageUrl`: images are uploaded in the web panel, there is no API for it
+- `durationHours` is rejected on every endpoint
+- Stories take no date (`activityDate` is rejected); their text is `whyIsSignificant`
+- Metrics (`attendees`, `readers`, `timeSpent`, `impact`, `minutes`) must be whole numbers of 1 or more. `0` is rejected with `0 is not greater or equal to 1`, so leave the metric out instead
+- Text limits: `title` 3 to 200 characters; `description`, `whyIsSignificant` and `additionalInfo` 2000; `productDescription` 500. The description limit counts the rendered HTML, tags included
+- Enum values (`eventFormat`, `contentType`, `format`, `interactionType`, `significanceType`) and tags are closed lists: anything else gets `is not a valid enum value`. Advocu has changed the tags before (the Cloud tags were reorganised between September and November 2026)
+- `eventFormat` used to be rejected on talks and is accepted now; `inPersonAttendees` goes with it
+- **An empty draft is accepted** (HTTP 201), so a draft endpoint cannot be probed with an empty body: it leaves an empty draft in the account
+- PATCH requests are handled automatically by the CLI: fields are wrapped in `{"data": {...}}` internally
 
 If you discover new API behaviour, please [open an issue](https://github.com/ahirtonlopes/advocu-gde/issues) or contribute to [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## Keeping up with the API
+
+Advocu changes tags, allowed values and rules without notice, and a list copied once goes stale. `tools/check_api.py` asks the live API what it accepts and reports what no longer matches this project:
+
+```bash
+ADVOCU_TOKEN=... python tools/check_api.py
+```
+
+It checks every built-in tag, every allowed value, each file in `examples/` exactly as the CLI would send it, and the size and metric limits. It cannot discover *new* tags or values (the API does not list them); for those, compare with the tag dropdown in the web panel.
+
+It never creates a draft. Each request carries two deliberate violations (a key that does not exist and a value of the wrong type), so the API always answers 400 with the full list of problems, and the script reports only the ones that are not deliberate. If a request is ever accepted, it stops at once and prints the draft id. Exit codes: `0` no drift, `1` drift found, `2` a draft was created by mistake, `3` the check could not finish.
 
 ---
 

@@ -141,3 +141,12 @@ class AdvocuClient:
 
     def create_story_draft(self, payload: dict) -> dict:
         return self._post("/activity-drafts/stories", payload)
+
+    def create_interaction_draft(self, payload: dict) -> dict:
+        return self._post("/activity-drafts/interaction-with-googlers", payload)
+
+    def create_feedback_draft(self, payload: dict) -> dict:
+        return self._post("/activity-drafts/product-feedback-given", payload)
+
+    def create_mentoring_draft(self, payload: dict) -> dict:
+        return self._post("/activity-drafts/mentoring", payload)

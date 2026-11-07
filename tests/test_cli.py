@@ -134,6 +134,18 @@ def fake_api(monkeypatch):
             state["created"].append(("story", payload))
             return {"id": "story-1"}
 
+        def create_interaction_draft(self, payload):
+            state["created"].append(("interaction", payload))
+            return {"id": "interaction-1"}
+
+        def create_feedback_draft(self, payload):
+            state["created"].append(("feedback", payload))
+            return {"id": "feedback-1"}
+
+        def create_mentoring_draft(self, payload):
+            state["created"].append(("mentoring", payload))
+            return {"id": "mentoring-1"}
+
     monkeypatch.setattr(cli_module, "AdvocuClient", FakeClient)
     return state
 
@@ -248,7 +260,15 @@ def test_missing_file_is_a_usage_error(fake_api, tmp_path):
 
 @pytest.mark.parametrize(
     "kind, filename",
-    [("talk", "talk.toml"), ("workshop", "workshop.toml"), ("content", "content.json"), ("story", "story.toml")],
+    [
+        ("talk", "talk.toml"),
+        ("workshop", "workshop.toml"),
+        ("content", "content.json"),
+        ("story", "story.toml"),
+        ("interaction", "interaction.toml"),
+        ("feedback", "feedback.toml"),
+        ("mentoring", "mentoring.toml"),
+    ],
 )
 def test_each_kind_goes_to_its_own_endpoint(fake_api, kind, filename):
     result = run("submit", kind, "--file", str(EXAMPLES / filename), "--yes")
@@ -279,3 +299,32 @@ def test_api_rejection_while_sending_is_a_one_line_error(monkeypatch, talk_file)
     assert "Error: HTTP 400: Activity draft did not pass validation." in result.output
     assert "[durationHours]" in result.output
     assert "Traceback" not in result.output
+
+
+def test_a_story_with_a_date_gets_a_clear_message(fake_api, tmp_path):
+    # The API has no date for stories (activityDate is rejected).
+    path = tmp_path / "story.toml"
+    path.write_text('title = "A story"\ndate = 2026-09-12\ntags = ["AI"]\n')
+
+    result = run("submit", "story", "--file", str(path), "--dry-run")
+
+    assert result.exit_code == 1
+    assert "Unknown key(s): date" in result.output
+    assert fake_api["created"] == []
+
+
+def test_zero_attendees_in_a_file_is_refused_with_advice(fake_api, tmp_path):
+    path = tmp_path / "talk.toml"
+    path.write_text(TALK_TOML.replace("attendees = 50", "attendees = 0"))
+
+    result = run("submit", "talk", "--file", str(path), "--dry-run")
+
+    assert result.exit_code == 1
+    assert "leave it out if unknown" in result.output
+
+
+def test_the_help_lists_all_seven_kinds():
+    result = CliRunner().invoke(cli, ["submit", "--help"])
+
+    for kind in ("talk", "workshop", "content", "story", "interaction", "feedback", "mentoring"):
+        assert kind in result.output

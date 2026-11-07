@@ -18,11 +18,12 @@ from rich.panel import Panel
 
 console = Console()
 
-# Tags validated by the Advocu API — only values from this list are accepted.
-# Using a tag outside this list will result in a 400 validation error.
-# Last synced from the Advocu web UI tag dropdown (September 2026); every value was
-# also checked against the API. Advocu retires and adds tags without notice, so
-# re-sync when a draft is rejected with "is not a valid enum value".
+# Tags the Advocu API accepts. Anything outside this list is rejected with a 400
+# ("is not a valid enum value"). Advocu adds, renames and retires tags without
+# notice (the Cloud tags were reorganised between September and November 2026),
+# so this list is checked against the live API rather than copied from the web
+# panel: run `python tools/check_api.py` to see what has drifted.
+# Last verified against the API on 2026-11-07 (67 tags).
 SUGGESTED_TAGS = [
     # AI
     "AI",
@@ -31,7 +32,6 @@ SUGGESTED_TAGS = [
     "AI - Antigravity",
     "AI - Colab",
     "AI - Gemini",
-    "AI - Gemini Enterprise Agent Platform",
     "AI - Gemma",
     "AI - Genkit",
     "AI - JAX",
@@ -48,16 +48,9 @@ SUGGESTED_TAGS = [
     "Android - Developer Productivity",
     "Android - Differentiated",
     "Android - Intelligent",
+    "Android - XR",
     # Cloud
-    "Cloud - AI Tools",
-    "Cloud - API Gateways",
-    "Cloud - App Development",
-    "Cloud - Compute, Networking, Storage",
-    "Cloud - Data",
-    "Cloud - Operations & Management",
-    "Cloud - Security",
-    "Cloud - Serverless & Containers",
-    "Cloud Study Jam",
+    "Cloud - Gemini Platform",
     # Firebase
     "Firebase",
     "Firebase - AI Logic",
@@ -96,21 +89,15 @@ SUGGESTED_TAGS = [
     "Workspace - Google Workspace (REST) APIs",
     # Other
     "Angular",
-    "AR/VR",
     "Build with AI",
-    "Dart - Flutter",
     "DevFest",
-    "Diversity & Inclusion",
     "Earth Engine",
     "Golang",
     "Google Cloud",
     "Google I/O Extended",
     "Google Maps Platform",
     "Google Workspace",
-    "International Women's Day",
-    "ML Study Jams",
     "Open Source",
-    "Road to Google Developers Certification",
     "UX / UI Design",
 ]
 
@@ -258,13 +245,49 @@ def _ask_resources() -> list[tuple[str, str]]:
     return resources
 
 
+# ── Limits and allowed values ─────────────────────────────────────────────────
+# Everything here was checked against the live API (2026-11-07) with requests
+# that the API always rejects, so nothing was created. `python tools/check_api.py`
+# repeats the check and reports what has drifted.
+
 # Advocu rejects drafts with HTTP 400 ("expected maxLength: 2000") once the
 # rendered description HTML (tags included) crosses this length.
 DESCRIPTION_MAX_LENGTH = 2000
+ADDITIONAL_INFO_MAX_LENGTH = 2000
+PRODUCT_DESCRIPTION_MAX_LENGTH = 500  # rendered HTML, product-feedback-given only
+TITLE_MIN_LENGTH = 3
+TITLE_MAX_LENGTH = 200
 
 LANGUAGES = ["EN-US", "PT-BR", "ES", "FR", "DE", "JA", "KO", "ZH"]
-CONTENT_TYPES = ["Articles", "Videos", "Podcasts", "Other"]
+CONTENT_TYPES = ["Articles", "Videos", "Podcasts", "Books", "Newsletters", "Demos"]
 EVENT_FORMATS = ["In-Person", "Virtual", "Hybrid"]
+INTERACTION_FORMATS = [
+    "Survey",
+    "Video feedback",
+    "In-person feedback sessions",
+    "Online feedback sessions",
+    "Feedback summits",
+    "User study / focus group",
+    "Feedback submissions",
+    "Other",
+]
+INTERACTION_TYPES = [
+    "Product feedback (research studies, roadmap input, Customer Advisory Boards, EAP)",
+    "File bugs / help out with finding bugs",
+    "GitHub",
+    "Stack Overflow",
+    "Industry",
+    "Other interactions with Google Product Teams",
+]
+FEEDBACK_TYPES = ["Early access program", "Product feedback session"]
+SIGNIFICANCE_TYPES = [
+    "Diversity & Inclusion",
+    "Helping Business",
+    "Social Impact",
+    "Feedback to Google",
+    "Community Leading",
+    "Technology / Open source",
+]
 
 
 def _format_title(role: str, event: str, talk: str, lang: str) -> str:
@@ -279,8 +302,10 @@ def _format_title(role: str, event: str, talk: str, lang: str) -> str:
 # Notes on API behaviour (confirmed by testing):
 #   - submissionDate → set automatically by the API; rejected if sent in POST
 #   - city           → requires geocoded autocomplete from the web panel; rejected in POST
-#   - eventFormat    → accepted by /activity-drafts/workshop but rejected by /activity-drafts/public-speaking
-#   - durationHours  → rejected on /activity-drafts/workshop
+#   - imageUrl       → rejected; the cover image is uploaded in the web panel
+#   - durationHours  → rejected on every endpoint
+#   - metrics        → whole numbers, 1 or more (0 is rejected): leave a metric out if unknown
+#   - an empty draft is accepted (HTTP 201), so never probe an endpoint with {}
 
 class SpecError(ValueError):
     """A draft spec is invalid. `errors` lists every problem found."""
@@ -290,26 +315,48 @@ class SpecError(ValueError):
         super().__init__("\n".join(self.errors))
 
 
-# kind -> (required keys, optional keys with their defaults)
+_TEXTS = {"description": "", "additional_info": ""}
+
+# kind -> (required keys, optional keys with their defaults; None = leave it out)
 _SPECS: dict[str, tuple[tuple[str, ...], dict]] = {
     "talk": (
         ("title", "event", "date", "url", "tags"),
-        {"role": "Speaker", "attendees": 0, "language": "EN-US", "country": "",
-         "description": "", "resources": ()},
+        {"role": "Speaker", "attendees": None, "in_person_attendees": None,
+         "language": "EN-US", "country": "", "event_format": None,
+         "resources": (), **_TEXTS},
     ),
     "workshop": (
         ("title", "event", "date", "url", "tags"),
-        {"role": "Workshop Proctor", "attendees": 0, "language": "EN-US", "country": "",
-         "event_format": "In-Person", "description": "", "resources": ()},
+        {"role": "Workshop Proctor", "attendees": None, "in_person_attendees": None,
+         "language": "EN-US", "country": "", "event_format": "In-Person",
+         "resources": (), **_TEXTS},
     ),
     "content": (
         ("title", "date", "url", "tags"),
-        {"content_type": "Articles", "language": "EN-US", "readers": 0,
-         "description": "", "resources": ()},
+        {"content_type": "Articles", "language": "EN-US", "readers": None,
+         "resources": (), **_TEXTS},
     ),
+    # Stories have no date in the API (activityDate is rejected). Their text is
+    # Advocu's "Why is this significant?" field, whyIsSignificant, so the spec's
+    # `description` goes there; the metric is `impact` (people reached).
     "story": (
+        ("title", "tags"),
+        {"url": "", "significance_type": None, "impact": None, **_TEXTS},
+    ),
+    "interaction": (
+        ("title", "date", "tags", "interaction_type", "format"),
+        {"event": "", "language": "EN-US", "minutes": None, "additional_links": "",
+         "resources": (), **_TEXTS},
+    ),
+    "feedback": (
+        ("title", "date", "tags", "product_description"),
+        {"content_type": "Product feedback session", "language": "EN-US", "minutes": None,
+         "resources": (), **_TEXTS},
+    ),
+    "mentoring": (
         ("title", "date", "tags"),
-        {"url": "", "description": ""},
+        {"language": "EN-US", "url": "", "country": "", "event_format": None,
+         "attendees": None, "in_person_attendees": None, "resources": (), **_TEXTS},
     ),
 }
 
@@ -347,10 +394,6 @@ def _is_url(value) -> bool:
     return parsed.scheme in ("http", "https") and bool(parsed.netloc)
 
 
-def _is_count(value) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
-
-
 def payload_from_spec(kind: str, spec: dict) -> dict:
     """Validate a draft spec and build the payload for the Advocu API.
 
@@ -375,7 +418,8 @@ def payload_from_spec(kind: str, spec: dict) -> dict:
         if spec.get(key) in (None, "", []):
             errors.append(f"Missing required key: {key}.")
 
-    s = {**optional, **{k: v for k, v in spec.items() if k in allowed}}
+    # A key set to null (JSON) counts as not given.
+    s = {**optional, **{k: v for k, v in spec.items() if k in allowed and v is not None}}
 
     def text(key: str) -> str:
         value = s.get(key, "")
@@ -384,8 +428,30 @@ def payload_from_spec(kind: str, spec: dict) -> dict:
             return ""
         return value.strip()
 
+    def count(key: str, minimum: int) -> int | None:
+        value = s.get(key)
+        if value is None:
+            return None
+        if not (isinstance(value, int) and not isinstance(value, bool) and value >= minimum):
+            errors.append(
+                f"{key} must be a whole number, {minimum} or more (leave it out if unknown), got {value!r}."
+            )
+            return None
+        return value
+
+    def choice(key: str, choices: list[str]) -> str | None:
+        value = s.get(key)
+        if value is None or (value == "" and key not in required):
+            return None
+        match = _canonical(value, choices)
+        if match is None and key in s:
+            errors.append(f"{key} must be one of {', '.join(choices)}, got {value!r}.")
+        return match
+
     title = text("title")
     description = text("description")
+    additional_info = text("additional_info")
+
     when = _parse_date(s["date"]) if "date" in s else None
     if s.get("date") not in (None, "") and when is None:
         errors.append(f"date must be a real date in YYYY-MM-DD format, got {s['date']!r}.")
@@ -417,42 +483,43 @@ def payload_from_spec(kind: str, spec: dict) -> dict:
             else:
                 resources.append((name.strip(), link.strip()))
 
-    language = _canonical(s.get("language"), LANGUAGES) if "language" in s else None
-    if "language" in s and language is None:
-        errors.append(f"language must be one of {', '.join(LANGUAGES)}, got {s['language']!r}.")
-
-    count_key = "readers" if kind == "content" else "attendees"
-    count = s.get(count_key, 0)
-    if kind in ("talk", "workshop", "content") and not _is_count(count):
-        errors.append(f"{count_key} must be a whole number, 0 or more, got {count!r}.")
-
-    content_type = event_format = None
+    language = (choice("language", LANGUAGES) or "EN-US") if "language" in s else None
+    event_format = choice("event_format", EVENT_FORMATS) if "event_format" in s else None
+    content_type = None
     if kind == "content":
-        content_type = _canonical(s.get("content_type"), CONTENT_TYPES)
-        if content_type is None:
-            errors.append(
-                f"content_type must be one of {', '.join(CONTENT_TYPES)}, got {s.get('content_type')!r}."
-            )
-    if kind == "workshop":
-        event_format = _canonical(s.get("event_format"), EVENT_FORMATS)
-        if event_format is None:
-            errors.append(
-                f"event_format must be one of {', '.join(EVENT_FORMATS)}, got {s.get('event_format')!r}."
-            )
+        content_type = choice("content_type", CONTENT_TYPES)
+    elif kind == "feedback":
+        content_type = choice("content_type", FEEDBACK_TYPES)
 
-    country = text("country") if kind in ("talk", "workshop") else ""
-    role = (text("role") or optional.get("role", "")) if kind in ("talk", "workshop") else ""
-    event = text("event") if kind in ("talk", "workshop") else ""
+    interaction_type = choice("interaction_type", INTERACTION_TYPES) if kind == "interaction" else None
+    interaction_format = choice("format", INTERACTION_FORMATS) if kind == "interaction" else None
+    significance = choice("significance_type", SIGNIFICANCE_TYPES) if kind == "story" else None
+
+    attendees = count("attendees", 1) if "attendees" in s else None
+    in_person = count("in_person_attendees", 0) if "in_person_attendees" in s else None
+    readers = count("readers", 1) if "readers" in s else None
+    minutes = count("minutes", 1) if "minutes" in s else None
+    impact = count("impact", 1) if "impact" in s else None
+
+    role = (text("role") or optional.get("role", "")) if "role" in s else ""
+    event = text("event") if "event" in s else ""
+    country = text("country") if "country" in s else ""
+    additional_links = text("additional_links") if "additional_links" in s else ""
+    product_description = text("product_description") if kind == "feedback" else ""
 
     if errors:
         raise SpecError(errors)
 
+    # Titles carry the language the material was delivered in.
     if kind in ("talk", "workshop"):
         final_title = _format_title(role, event, title, language)
-    elif kind == "content":
-        final_title = f"{title} ({language})"
-    else:
+    elif kind == "interaction":
+        base = f"{title} @ {event}" if event else title
+        final_title = f"{base} ({language})"
+    elif kind == "story":
         final_title = title
+    else:
+        final_title = f"{title} ({language})"
 
     # Stories take no resources list; everything else appends it to the text.
     html_body = _md_to_html(description)
@@ -460,19 +527,44 @@ def payload_from_spec(kind: str, spec: dict) -> dict:
         html_body += _build_resources_html(resources)
 
     data: dict = {"title": final_title}
-    if kind == "content":
+    if kind in ("content", "feedback"):
         data["contentType"] = content_type
-    data["activityDate"] = when
-    if url:
-        data["activityUrl"] = url
-    data["description"] = html_body
-    data["tags"] = tags
+    if kind == "interaction":
+        data["interactionType"] = interaction_type
+        data["format"] = interaction_format
+    if kind == "story" and significance:
+        data["significanceType"] = significance
     if kind != "story":
-        data["metrics"] = {count_key: count}
-    if kind == "workshop":
+        data["activityDate"] = when
+    if url and kind in ("talk", "workshop", "content", "story", "mentoring"):
+        data["activityUrl"] = url
+    data["whyIsSignificant" if kind == "story" else "description"] = html_body
+    if kind == "feedback":
+        data["productDescription"] = _md_to_html(product_description)
+    data["tags"] = tags
+
+    metrics = {}
+    if kind == "content" and readers:
+        metrics["readers"] = readers
+    if kind in ("talk", "workshop", "mentoring") and attendees:
+        metrics["attendees"] = attendees
+    if kind in ("interaction", "feedback") and minutes:
+        metrics["timeSpent"] = minutes
+    if kind == "story" and impact:
+        metrics["impact"] = impact
+    if metrics:
+        data["metrics"] = metrics
+
+    if in_person is not None and kind in ("talk", "workshop", "mentoring"):
+        data["inPersonAttendees"] = in_person
+    if event_format and kind in ("talk", "workshop", "mentoring"):
         data["eventFormat"] = event_format
-    if country:
+    if country and kind in ("talk", "workshop", "mentoring"):
         data["country"] = country
+    if additional_links:
+        data["additionalLinks"] = additional_links
+    if additional_info:
+        data["additionalInfo"] = additional_info
     data["private"] = False
     return data
 
@@ -501,12 +593,23 @@ def payload_problems(data: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
 
-    size = len(data.get("description", ""))
-    if size > DESCRIPTION_MAX_LENGTH:
+    def too_long(key: str, limit: int, label: str) -> None:
+        size = len(data.get(key) or "")
+        if size > limit:
+            errors.append(
+                f"{label} is {size} characters, and Advocu rejects more than {limit} with HTTP 400. Shorten the text."
+            )
+
+    title_size = len(data.get("title", ""))
+    if not TITLE_MIN_LENGTH <= title_size <= TITLE_MAX_LENGTH:
         errors.append(
-            f"description is {size} characters (rendered HTML), and Advocu rejects drafts "
-            f"over {DESCRIPTION_MAX_LENGTH} with HTTP 400. Shorten the text."
+            f"title is {title_size} characters, and Advocu accepts {TITLE_MIN_LENGTH} to {TITLE_MAX_LENGTH}. "
+            "The final title includes the role, event and language."
         )
+    too_long("description", DESCRIPTION_MAX_LENGTH, "description (rendered HTML)")
+    too_long("whyIsSignificant", DESCRIPTION_MAX_LENGTH, "description (rendered HTML)")
+    too_long("additionalInfo", ADDITIONAL_INFO_MAX_LENGTH, "additional_info")
+    too_long("productDescription", PRODUCT_DESCRIPTION_MAX_LENGTH, "product_description (rendered HTML)")
 
     unknown = [t for t in data.get("tags", []) if t not in SUGGESTED_TAGS]
     if unknown:
@@ -514,6 +617,16 @@ def payload_problems(data: dict) -> tuple[list[str], list[str]]:
             f"Tag(s) not in the built-in list: {', '.join(unknown)}. Advocu rejects tags it does "
             "not know, and the list can be out of date: check the tag dropdown in the web panel."
         )
+
+    fmt = data.get("eventFormat")
+    if fmt in ("In-Person", "Hybrid") and not data.get("country"):
+        warnings.append(f"{fmt} events usually need a country; the city is set later in the web panel.")
+    if fmt == "Hybrid" and "inPersonAttendees" not in data:
+        warnings.append("Hybrid events usually need in_person_attendees (how many were in the room).")
+    total = (data.get("metrics") or {}).get("attendees")
+    in_room = data.get("inPersonAttendees")
+    if total and in_room and in_room > total:
+        warnings.append(f"in_person_attendees ({in_room}) is larger than attendees ({total}).")
     return errors, warnings
 
 
@@ -565,6 +678,28 @@ def _ask_language() -> str:
     )
 
 
+def _ask_choice(label: str, choices: list[str], default: str | None = None) -> str:
+    return click.prompt(label, default=default, type=click.Choice(choices, case_sensitive=False))
+
+
+def _ask_count(label: str) -> int | None:
+    """A number, or nothing: the API refuses 0, so 0 means 'leave it out'."""
+    return click.prompt(f"{label} (0 to skip)", default=0, type=int) or None
+
+
+def _resources() -> list[dict]:
+    return [{"name": n, "url": u} for n, u in _ask_resources()]
+
+
+def _event_questions() -> dict:
+    """Format, and how many people were in the room for a hybrid event."""
+    event_format = _ask_choice("Event format", EVENT_FORMATS, default="In-Person")
+    spec = {"event_format": event_format}
+    if event_format == "Hybrid":
+        spec["in_person_attendees"] = _ask_count("In-person attendees")
+    return spec
+
+
 def build_talk() -> dict | None:
     click.echo("\n🎤  New talk (public-speaking)\n")
 
@@ -574,12 +709,13 @@ def build_talk() -> dict | None:
         "event":       _ask("Event name"),
         "date":        _ask_date("Activity date (YYYY-MM-DD)"),
         "url":         _ask_url("Event URL"),
-        "attendees":   click.prompt("Number of attendees (approx.)", default=0, type=int),
+        "attendees":   _ask_count("Number of attendees (approx.)"),
+        **_event_questions(),
         "language":    _ask_language(),
         "country":     _ask_country(),
         "tags":        _ask_tags(),
         "description": _ask_text_block("Descriptive text (post, notes, summary):"),
-        "resources":   [{"name": n, "url": u} for n, u in _ask_resources()],
+        "resources":   _resources(),
     }
     return _finish("talk", spec)
 
@@ -593,12 +729,13 @@ def build_workshop() -> dict | None:
         "event":       _ask("Event name"),
         "date":        _ask_date("Activity date (YYYY-MM-DD)"),
         "url":         _ask_url("Event URL"),
-        "attendees":   click.prompt("Number of attendees", default=0, type=int),
+        "attendees":   _ask_count("Number of attendees"),
+        **_event_questions(),
         "language":    _ask_language(),
         "country":     _ask_country(),
         "tags":        _ask_tags(),
         "description": _ask_text_block("Descriptive text (post, notes, summary):"),
-        "resources":   [{"name": n, "url": u} for n, u in _ask_resources()],
+        "resources":   _resources(),
     }
     return _finish("workshop", spec)
 
@@ -607,19 +744,15 @@ def build_content() -> dict | None:
     click.echo("\n📝  New content (content-creation)\n")
 
     spec = {
-        "content_type": click.prompt(
-            "Content type",
-            type=click.Choice(CONTENT_TYPES, case_sensitive=False),
-            default="Articles",
-        ),
+        "content_type": _ask_choice("Content type", CONTENT_TYPES, default="Articles"),
         "title":       _ask("Title"),
         "date":        _ask_date("Publication date (YYYY-MM-DD)"),
         "url":         _ask_url("Content URL"),
         "language":    _ask_language(),
-        "readers":     click.prompt("Views / readers (approx.)", default=0, type=int),
+        "readers":     _ask_count("Views / readers (approx.)"),
         "tags":        _ask_tags(),
         "description": _ask_text_block("Descriptive text:"),
-        "resources":   [{"name": n, "url": u} for n, u in _ask_resources()],
+        "resources":   _resources(),
     }
     return _finish("content", spec)
 
@@ -629,9 +762,64 @@ def build_story() -> dict | None:
 
     spec = {
         "title":       _ask("Title / caption"),
-        "date":        _ask_date("Activity date (YYYY-MM-DD)"),
         "url":         _ask_url("Story URL (optional)", required=False),
+        "significance_type": _ask_choice("Significance", SIGNIFICANCE_TYPES),
+        "impact":      _ask_count("People reached or impacted"),
         "tags":        _ask_tags(),
-        "description": _ask_text_block("Description:"),
+        "description": _ask_text_block("Why is this significant?"),
     }
     return _finish("story", spec)
+
+
+def build_interaction() -> dict | None:
+    click.echo("\n🤝  New interaction with Googlers\n")
+
+    spec = {
+        "title":       _ask("Title (what was the session?)"),
+        "event":       _ask("Event or program (optional)", default=""),
+        "date":        _ask_date("Activity date (YYYY-MM-DD)"),
+        "interaction_type": _ask_choice("Interaction type", INTERACTION_TYPES),
+        "format":      _ask_choice("Format", INTERACTION_FORMATS),
+        "minutes":     _ask_count("Time spent, in minutes"),
+        "language":    _ask_language(),
+        "tags":        _ask_tags(),
+        "description": _ask_text_block("Descriptive text:"),
+        "additional_links": _ask("Additional links (optional)", default=""),
+        "resources":   _resources(),
+    }
+    return _finish("interaction", spec)
+
+
+def build_feedback() -> dict | None:
+    click.echo("\n🧪  New product feedback\n")
+
+    spec = {
+        "title":       _ask("Title (what was the session?)"),
+        "date":        _ask_date("Activity date (YYYY-MM-DD)"),
+        "content_type": _ask_choice("Type", FEEDBACK_TYPES, default="Product feedback session"),
+        "product_description": _ask("Which product was the feedback about? (max 500 characters)"),
+        "minutes":     _ask_count("Time spent, in minutes"),
+        "language":    _ask_language(),
+        "tags":        _ask_tags(),
+        "description": _ask_text_block("Descriptive text:"),
+        "resources":   _resources(),
+    }
+    return _finish("feedback", spec)
+
+
+def build_mentoring() -> dict | None:
+    click.echo("\n🧭  New mentoring\n")
+
+    spec = {
+        "title":       _ask("Title"),
+        "date":        _ask_date("Activity date (YYYY-MM-DD)"),
+        "url":         _ask_url("Related URL (optional)", required=False),
+        "attendees":   _ask_count("People mentored, in total"),
+        **_event_questions(),
+        "language":    _ask_language(),
+        "country":     _ask_country(),
+        "tags":        _ask_tags(),
+        "description": _ask_text_block("Descriptive text:"),
+        "resources":   _resources(),
+    }
+    return _finish("mentoring", spec)

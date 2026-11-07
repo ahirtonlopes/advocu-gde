@@ -37,27 +37,45 @@ These were discovered through live testing and are not officially documented:
 
 | Endpoint | Rejected fields |
 |---|---|
-| `POST /activity-drafts/public-speaking` | `city`, `submissionDate`, `eventFormat` |
-| `POST /activity-drafts/workshop` | `city`, `submissionDate`, `durationHours` |
-| `POST /activity-drafts/*` (all) | `submissionDate` (set automatically) |
+| `POST /activity-drafts/*` (all) | `submissionDate`, `imageUrl`, `city`, `durationHours` |
+| `POST /activity-drafts/stories` | `activityDate` (stories have no date; the text is `whyIsSignificant`) |
+| `POST /activity-drafts/interaction-with-googlers` | `activityUrl`, `country`, `eventFormat` |
+| `POST /activity-drafts/product-feedback-given` | `activityUrl`, `country`, `eventFormat` |
 | `PATCH /activities/{id}` | Expects `{"data": {...}}` wrapper |
 
-Other limits:
-- `description` (rendered HTML) is capped at **2000 characters**: the
-  interactive flow warns before submitting, and `submit --file` refuses to send
+Other rules, all measured against the live API:
+- Metrics are whole numbers of **1 or more**: `0` is rejected, so a metric is left out when unknown
+- `title` is 3 to 200 characters; `description`, `whyIsSignificant` and `additionalInfo` 2000; `productDescription` 500. The description limit counts the rendered HTML
+- Tags and enum values are closed lists, and Advocu changes them without notice
+- `eventFormat` used to be rejected on talks and is accepted now
 
 Fields that must be completed via the Advocu web panel:
-- **City** — requires geocoded autocomplete
-- **Image** — file upload (no API endpoint for GDE accounts)
+- **City** - requires geocoded autocomplete
+- **Image** - file upload (no API endpoint for GDE accounts)
 
 If you discover new API behaviour, please open an issue or PR updating
 this list and the relevant code comments.
 
+## Keeping the API knowledge honest
+
+The notes above went stale once already, so they are checked rather than trusted:
+
+```bash
+ADVOCU_TOKEN=... python tools/check_api.py
+```
+
+Run it before a release and whenever a draft is rejected unexpectedly. It never
+creates a draft: every request carries two deliberate violations, so the API
+always answers 400 and lists what it dislikes. **Never probe a draft endpoint
+with an empty or a valid payload**: the API accepts it (HTTP 201) and leaves a
+draft in the account. When you write your own probe, keep both deliberate
+violations, and treat any answer other than 400 as an error (a 429 has no
+validation text, and reading it as "all clear" reports drift that is not there).
+
 ## Adding a new draft type
 
-Per the Personal API docs (July 2026), a few draft endpoints are not covered
-yet: `interaction-with-googlers`, `mentoring` and `product-feedback-given`.
-To add one:
+The CLI covers the seven draft endpoints the Personal API has today. If Advocu
+adds another:
 
 1. `api.py`: add `create_<type>_draft()`, posting to `/activity-drafts/<endpoint>`.
 2. `templates.py`: add the type to `_SPECS` (required keys, optional keys with
@@ -68,11 +86,12 @@ To add one:
    `submit <type>` command like the existing ones.
 4. `examples/<type>.toml` (or `.json`): a template for `submit --file`. A test
    loads every file in `examples/`, so it cannot go stale. Add the type to
-   `test_there_is_an_example_for_each_draft_type` too.
-5. Tests for the payload (`tests/test_payloads.py`) and the command
+   `KINDS` in `tests/test_payloads.py` too.
+5. `tools/check_api.py`: add its endpoint to `ENDPOINTS` and any allowed-value
+   list to `ENUMS`, then run it: the examples are sent exactly as the CLI would.
+6. Tests for the payload (`tests/test_payloads.py`) and the command
    (`tests/test_cli.py`).
-6. Try it against the real API and record any field it rejects in the tables
-   above, with the exact error.
+7. Record any field the API rejects in the tables above, with the exact error.
 
 ## Code style
 

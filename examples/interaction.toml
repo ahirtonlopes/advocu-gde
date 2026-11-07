@@ -1,0 +1,17 @@
+#   advocu submit interaction --file examples/interaction.toml --dry-run
+# "Interaction with Googlers": sessions with Google product teams.
+
+title = "Product council session"
+event = "GDE Mini-Summit"             # optional; the title becomes "Title @ Event (LANG)"
+date = 2026-04-08
+interaction_type = "Product feedback (research studies, roadmap input, Customer Advisory Boards, EAP)"
+format = "In-person feedback sessions"
+minutes = 50                           # time spent, whole minutes (the API calls it timeSpent)
+language = "EN-US"
+tags = ["AI", "AI - Gemini"]
+description = """
+Took part in a product council session with the team, giving feedback on the developer experience.
+
+* What worked well in the first-run experience;
+* Where I got stuck, with a reproduction.
+"""
