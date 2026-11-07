@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import pytest
 import requests
 
-from advocu_manager.api import BASE_URL, AdvocuClient
+from advocu_manager.api import BASE_URL, DEFAULT_TIMEOUT, AdvocuClient, AdvocuNetworkError
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +47,9 @@ class TestRequests:
 
         client.list_activities(page=2, size=50)
 
-        mock_get.assert_called_once_with(f"{BASE_URL}/activities", params={"page": 2, "size": 50})
+        mock_get.assert_called_once_with(
+            f"{BASE_URL}/activities", params={"page": 2, "size": 50}, timeout=DEFAULT_TIMEOUT
+        )
 
     def test_create_talk_draft_posts_to_public_speaking_endpoint(self, monkeypatch):
         client = AdvocuClient(token="t")
@@ -57,7 +59,7 @@ class TestRequests:
         result = client.create_talk_draft({"title": "x"})
 
         mock_post.assert_called_once_with(
-            f"{BASE_URL}/activity-drafts/public-speaking", json={"title": "x"}
+            f"{BASE_URL}/activity-drafts/public-speaking", json={"title": "x"}, timeout=DEFAULT_TIMEOUT
         )
         assert result == {"id": "abc"}
 
@@ -69,7 +71,7 @@ class TestRequests:
         client.create_workshop_draft({"title": "x"})
 
         mock_post.assert_called_once_with(
-            f"{BASE_URL}/activity-drafts/workshop", json={"title": "x"}
+            f"{BASE_URL}/activity-drafts/workshop", json={"title": "x"}, timeout=DEFAULT_TIMEOUT
         )
 
     def test_update_activity_wraps_fields_in_data(self, monkeypatch):
@@ -80,7 +82,7 @@ class TestRequests:
         client.update_activity("id123", {"title": "New"})
 
         mock_patch.assert_called_once_with(
-            f"{BASE_URL}/activities/id123", json={"data": {"title": "New"}}
+            f"{BASE_URL}/activities/id123", json={"data": {"title": "New"}}, timeout=DEFAULT_TIMEOUT
         )
 
 
@@ -137,3 +139,135 @@ class TestPagination:
         activities = client.list_all_activities()
 
         assert len(activities) == 101
+
+
+class TestTimeoutsAndNetworkErrors:
+    def test_default_timeout_is_a_connect_read_pair(self):
+        assert DEFAULT_TIMEOUT == (5, 30)
+
+    def test_custom_timeout_is_forwarded(self, monkeypatch):
+        client = AdvocuClient(token="t", timeout=7)
+        mock_get = MagicMock(return_value=make_response(json_body={"content": []}))
+        monkeypatch.setattr(client.session, "get", mock_get)
+
+        client.list_activities()
+
+        assert mock_get.call_args.kwargs["timeout"] == 7
+
+    def test_timeout_becomes_friendly_error(self, monkeypatch):
+        client = AdvocuClient(token="t")
+        monkeypatch.setattr(
+            client.session, "get", MagicMock(side_effect=requests.exceptions.ReadTimeout())
+        )
+
+        with pytest.raises(AdvocuNetworkError, match="timed out after 30s"):
+            client.list_activities()
+
+    def test_connect_timeout_is_treated_as_timeout(self, monkeypatch):
+        client = AdvocuClient(token="t")
+        monkeypatch.setattr(
+            client.session, "post", MagicMock(side_effect=requests.exceptions.ConnectTimeout())
+        )
+
+        with pytest.raises(AdvocuNetworkError, match="timed out"):
+            client.create_talk_draft({})
+
+    def test_connection_error_becomes_friendly_error(self, monkeypatch):
+        client = AdvocuClient(token="t")
+        monkeypatch.setattr(
+            client.session, "get", MagicMock(side_effect=requests.exceptions.ConnectionError())
+        )
+
+        with pytest.raises(AdvocuNetworkError, match="Could not connect to Advocu"):
+            client.list_activities()
+
+    def test_network_error_is_a_requests_exception(self):
+        # The CLI catches requests.RequestException, so this must stay true.
+        assert issubclass(AdvocuNetworkError, requests.RequestException)
+
+    def test_non_json_success_body_is_reported(self, monkeypatch):
+        client = AdvocuClient(token="t")
+        bad = make_response(status_code=200)
+        bad.json.side_effect = ValueError("not json")
+        monkeypatch.setattr(client.session, "get", MagicMock(return_value=bad))
+
+        with pytest.raises(AdvocuNetworkError, match="not valid JSON"):
+            client.list_activities()
+
+
+class TestErrorMessages:
+    def test_validation_details_are_included(self, monkeypatch):
+        # Real response shape seen when a workshop draft sent durationHours.
+        body = {
+            "message": "Activity draft did not pass validation.",
+            "details": {"error": "[#: extraneous key [durationHours] is not permitted]"},
+        }
+        client = AdvocuClient(token="t")
+        monkeypatch.setattr(
+            client.session, "post", MagicMock(return_value=make_response(400, body))
+        )
+
+        with pytest.raises(requests.HTTPError) as exc:
+            client.create_workshop_draft({})
+
+        assert "Activity draft did not pass validation." in str(exc.value)
+        assert "extraneous key [durationHours]" in str(exc.value)
+
+    @pytest.mark.parametrize(
+        "status, hint",
+        [
+            (401, "check that your token is valid"),
+            (403, "not allowed"),
+            (404, "check the activity id"),
+            (429, "rate limit reached"),
+            (500, "server error"),
+            (503, "server error"),
+        ],
+    )
+    def test_status_hints(self, monkeypatch, status, hint):
+        client = AdvocuClient(token="t")
+        monkeypatch.setattr(
+            client.session,
+            "get",
+            MagicMock(return_value=make_response(status, {"message": "nope"})),
+        )
+
+        with pytest.raises(requests.HTTPError, match=f"HTTP {status}: nope") as exc:
+            client.list_activities()
+
+        assert hint in str(exc.value)
+
+    def test_400_has_no_extra_hint(self, monkeypatch):
+        client = AdvocuClient(token="t")
+        monkeypatch.setattr(
+            client.session, "post", MagicMock(return_value=make_response(400, {"message": "bad"}))
+        )
+
+        with pytest.raises(requests.HTTPError) as exc:
+            client.create_talk_draft({})
+
+        assert str(exc.value) == "HTTP 400: bad"
+
+    def test_hint_alone_when_the_body_is_empty(self, monkeypatch):
+        client = AdvocuClient(token="t")
+        empty = make_response(401, json_body=None, text="")
+        empty.json.side_effect = ValueError("no body")
+        monkeypatch.setattr(client.session, "get", MagicMock(return_value=empty))
+
+        with pytest.raises(requests.HTTPError) as exc:
+            client.list_activities()
+
+        assert str(exc.value) == (
+            "HTTP 401: check that your token is valid: set ADVOCU_TOKEN or pass --token"
+        )
+
+    def test_placeholder_when_there_is_neither_body_nor_hint(self, monkeypatch):
+        client = AdvocuClient(token="t")
+        empty = make_response(418, json_body=None, text="")
+        empty.json.side_effect = ValueError("no body")
+        monkeypatch.setattr(client.session, "get", MagicMock(return_value=empty))
+
+        with pytest.raises(requests.HTTPError) as exc:
+            client.list_activities()
+
+        assert str(exc.value) == "HTTP 418: (empty response)"

@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 from datetime import date
 
 import click
+import requests
 from rich.console import Console
 from rich.table import Table
 from rich import box
@@ -15,6 +16,21 @@ from .api import AdvocuClient
 from .templates import build_talk, build_workshop, build_content, build_story
 
 console = Console()
+
+
+class AdvocuGroup(click.Group):
+    """Root group that turns API and network failures into a one-line error.
+
+    Without it, a 400 from the API or a dropped connection ends in a raw
+    traceback. ClickException prints "Error: <message>" and exits with 1,
+    and (unlike rich markup) shows API text with [brackets] verbatim.
+    """
+
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except requests.RequestException as e:
+            raise click.ClickException(str(e)) from e
 
 
 def get_client(token: str | None) -> AdvocuClient:
@@ -27,7 +43,7 @@ def get_client(token: str | None) -> AdvocuClient:
 
 # ── Root group ───────────────────────────────────────────────────────────────
 
-@click.group()
+@click.group(cls=AdvocuGroup)
 @click.version_option(__version__, "--version", "-V", prog_name="advocu")
 @click.option(
     "--token", "-t",
